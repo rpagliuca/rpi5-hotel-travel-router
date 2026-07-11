@@ -1,0 +1,20 @@
+# dnsmasq config for the private AP (uap0)
+interface={{ ap_interface }}
+bind-interfaces
+
+# DHCP range for clients
+dhcp-range={{ ap_dhcp_start }},{{ ap_dhcp_end }},255.255.255.0,24h
+
+# Gateway and DNS pushed to clients
+dhcp-option=3,{{ ap_ip }}
+dhcp-option=6,{{ ap_ip }}
+
+# Use upstream DNS via Tailscale (100.100.100.100) or public fallback
+server=100.100.100.100
+server=1.1.1.1
+
+# Don't read /etc/hosts for clients on this interface
+no-hosts
+
+# Lease file
+dhcp-leasefile=/var/lib/misc/dnsmasq-uap0.leases

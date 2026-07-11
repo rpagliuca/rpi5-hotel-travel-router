@@ -1,0 +1,23 @@
+[Unit]
+Description=Tailscale node authentication and exit-node config
+After=tailscaled.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# --authkey: pre-auth key from vault (only needed on first run; Tailscale caches state)
+# --exit-node: route all traffic through this Tailscale node
+# --exit-node-allow-lan-access: allow reaching LAN (hotel network) even when exit node is set
+ExecStart=/usr/bin/tailscale up \
+  --authkey={{ tailscale_authkey }} \
+  --hostname={{ tailscale_hostname }} \
+  --exit-node={{ tailscale_exit_node }} \
+{% if tailscale_exit_node_allow_lan_access %}
+  --exit-node-allow-lan-access \
+{% endif %}
+  --accept-routes \
+  --reset
+
+[Install]
+WantedBy=multi-user.target

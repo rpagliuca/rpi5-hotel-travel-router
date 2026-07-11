@@ -1,0 +1,18 @@
+---
+- name: RPi5 Hotel Travel Router
+  hosts: rpi5
+  gather_facts: true
+
+  vars:
+    # Merge vault secrets into usable vars
+    ap_password: "{{ vault_ap_password }}"
+    hotel_ssid: "{{ vault_hotel_ssid }}"
+    hotel_password: "{{ vault_hotel_password }}"
+    tailscale_authkey: "{{ vault_tailscale_authkey }}"
+
+  roles:
+    - base
+    - wifi-client
+    - access-point
+    - routing
+    - tailscale

@@ -1,0 +1,6 @@
+[Match]
+Name={{ ap_interface }}
+
+[Network]
+Address={{ ap_ip }}/{{ ap_subnet | regex_replace('^.*/(.*)$', '\\1') }}
+IPForward=yes

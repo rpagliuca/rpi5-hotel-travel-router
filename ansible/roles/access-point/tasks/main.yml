@@ -1,0 +1,64 @@
+---
+# Unmask hostapd (it ships masked on Raspberry Pi OS)
+- name: Unmask hostapd
+  systemd:
+    name: hostapd
+    masked: false
+
+- name: Deploy hostapd config
+  template:
+    src: hostapd.conf.j2
+    dest: /etc/hostapd/hostapd.conf
+    mode: "0600"
+  notify: Restart hostapd
+
+- name: Point hostapd to config file
+  lineinfile:
+    path: /etc/default/hostapd
+    regexp: "^#?DAEMON_CONF"
+    line: 'DAEMON_CONF="/etc/hostapd/hostapd.conf"'
+  notify: Restart hostapd
+
+# systemd-networkd: assign static IP to uap0 (the AP side)
+- name: Deploy systemd-networkd config for uap0
+  template:
+    src: uap0.network.j2
+    dest: /etc/systemd/network/10-uap0.network
+    mode: "0644"
+  notify: Restart systemd-networkd
+
+# dnsmasq: DHCP + DNS for uap0 clients
+- name: Deploy dnsmasq config for uap0
+  template:
+    src: dnsmasq-uap0.conf.j2
+    dest: /etc/dnsmasq.d/uap0.conf
+    mode: "0644"
+  notify: Restart dnsmasq
+
+- name: Enable and start hostapd
+  systemd:
+    name: hostapd
+    enabled: true
+    state: started
+
+- name: Enable and start dnsmasq
+  systemd:
+    name: dnsmasq
+    enabled: true
+    state: started
+
+handlers:
+  - name: Restart hostapd
+    systemd:
+      name: hostapd
+      state: restarted
+
+  - name: Restart dnsmasq
+    systemd:
+      name: dnsmasq
+      state: restarted
+
+  - name: Restart systemd-networkd
+    systemd:
+      name: systemd-networkd
+      state: restarted

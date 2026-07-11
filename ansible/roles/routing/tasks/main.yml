@@ -1,0 +1,27 @@
+---
+# IP forwarding (also set in base, but ensure it's persistent here too)
+- name: Ensure IP forwarding is enabled
+  sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    sysctl_file: /etc/sysctl.d/90-router.conf
+    reload: true
+
+- name: Deploy nftables config
+  template:
+    src: nftables.conf.j2
+    dest: /etc/nftables.conf
+    mode: "0644"
+  notify: Reload nftables
+
+- name: Enable and start nftables
+  systemd:
+    name: nftables
+    enabled: true
+    state: started
+
+handlers:
+  - name: Reload nftables
+    systemd:
+      name: nftables
+      state: restarted

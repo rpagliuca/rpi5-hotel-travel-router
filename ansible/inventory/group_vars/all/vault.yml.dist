@@ -1,0 +1,13 @@
+---
+# Copy this file to vault.yml and encrypt with:
+#   ansible-vault encrypt ansible/inventory/group_vars/all/vault.yml
+# Add vault password to ansible/.vault_pass (never commit that file).
+
+vault_ap_password: "CHANGE_ME_strong_wifi_password"
+
+vault_hotel_ssid: "HotelWiFiName"
+vault_hotel_password: "HotelWiFiPassword"
+
+# Reusable Tailscale auth key (generate at https://login.tailscale.com/admin/settings/keys)
+# Use a pre-auth key tagged with "tag:travel-router" for auto-approval.
+vault_tailscale_authkey: "tskey-auth-XXXXXXXXXXXXXXXX"

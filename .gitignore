@@ -1,0 +1,23 @@
+# Ansible vault password file
+.vault_pass
+*.vault_pass
+
+# Secret vars (real, not .dist)
+ansible/inventory/group_vars/all/vault.yml
+
+# SSH keys
+*.pem
+*.key
+id_*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+
+# Tailscale auth keys (never commit)
+tailscale_authkey*

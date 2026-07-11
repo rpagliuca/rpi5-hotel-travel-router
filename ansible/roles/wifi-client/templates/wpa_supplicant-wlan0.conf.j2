@@ -1,0 +1,12 @@
+ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
+update_config=1
+country=BR
+
+# Hotel WiFi (uplink). Update SSID/PSK when you arrive.
+network={
+    ssid="{{ hotel_ssid }}"
+    psk="{{ hotel_password }}"
+    key_mgmt=WPA-PSK
+    scan_ssid=1
+    priority=10
+}

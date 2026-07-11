@@ -1,0 +1,90 @@
+---
+# Unblock WiFi radio (rfkill may block it on first boot)
+- name: Unblock WiFi with rfkill
+  command: rfkill unblock wifi
+  changed_when: false
+
+# wpa_supplicant config for hotel WiFi uplink
+- name: Deploy wpa_supplicant config for wlan0
+  template:
+    src: wpa_supplicant-wlan0.conf.j2
+    dest: /etc/wpa_supplicant/wpa_supplicant-wlan0.conf
+    mode: "0600"
+  notify: Restart wpa_supplicant
+
+# Prevent dhcpcd from managing wlan0 (we use systemd-networkd)
+- name: Ensure dhcpcd does not manage wlan0
+  lineinfile:
+    path: /etc/dhcpcd.conf
+    line: "denyinterfaces wlan0 uap0"
+    create: true
+  notify: Restart dhcpcd
+
+# Enable wpa_supplicant@wlan0 systemd service
+- name: Enable wpa_supplicant for wlan0
+  systemd:
+    name: wpa_supplicant@wlan0
+    enabled: true
+    state: started
+
+# Systemd service to create the virtual AP interface (uap0) over wlan0
+- name: Deploy uap0-create systemd service
+  template:
+    src: uap0-create.service.j2
+    dest: /etc/systemd/system/uap0-create.service
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart uap0-create
+
+- name: Enable uap0-create service
+  systemd:
+    name: uap0-create
+    enabled: true
+    daemon_reload: true
+
+# systemd-networkd: configure wlan0 to use DHCP for hotel WiFi IP
+- name: Deploy systemd-networkd config for wlan0
+  copy:
+    dest: /etc/systemd/network/20-wlan0.network
+    content: |
+      [Match]
+      Name=wlan0
+
+      [Network]
+      DHCP=yes
+      IPForward=yes
+    mode: "0644"
+  notify: Restart systemd-networkd
+
+- name: Enable systemd-networkd
+  systemd:
+    name: systemd-networkd
+    enabled: true
+    state: started
+
+handlers:
+  - name: Restart wpa_supplicant
+    systemd:
+      name: wpa_supplicant@wlan0
+      state: restarted
+
+  - name: Restart dhcpcd
+    systemd:
+      name: dhcpcd
+      state: restarted
+    ignore_errors: true
+
+  - name: Reload systemd
+    systemd:
+      daemon_reload: true
+
+  - name: Restart uap0-create
+    systemd:
+      name: uap0-create
+      state: restarted
+
+  - name: Restart systemd-networkd
+    systemd:
+      name: systemd-networkd
+      state: restarted

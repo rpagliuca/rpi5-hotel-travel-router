@@ -1,0 +1,58 @@
+#!/usr/sbin/nft -f
+# nftables config for RPi5 travel router
+# Traffic flow: uap0 clients → tailscale0 → exit node ({{ tailscale_exit_node }}) → internet
+
+flush ruleset
+
+table inet filter {
+    chain input {
+        type filter hook input priority filter; policy drop;
+
+        # Allow established/related
+        ct state established,related accept
+
+        # Allow loopback
+        iifname "lo" accept
+
+        # Allow SSH from AP clients and local network
+        iifname { "{{ ap_interface }}", "{{ uplink_interface }}", "{{ eth_interface }}" } tcp dport 22 accept
+
+        # Allow DHCP from AP clients
+        iifname "{{ ap_interface }}" udp dport 67 accept
+
+        # Allow DNS from AP clients
+        iifname "{{ ap_interface }}" tcp dport 53 accept
+        iifname "{{ ap_interface }}" udp dport 53 accept
+
+        # Allow ICMP
+        ip protocol icmp accept
+        ip6 nexthdr icmpv6 accept
+    }
+
+    chain forward {
+        type filter hook forward priority filter; policy drop;
+
+        # Allow forwarding from AP clients through tailscale
+        iifname "{{ ap_interface }}" oifname "tailscale0" accept
+
+        # Allow established/related in reverse direction
+        ct state established,related accept
+    }
+
+    chain output {
+        type filter hook output priority filter; policy accept;
+    }
+}
+
+table ip nat {
+    chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+
+        # MASQUERADE AP client traffic going out via Tailscale exit node
+        iifname "{{ ap_interface }}" oifname "tailscale0" masquerade
+
+        # Fallback: if tailscale is down, MASQUERADE via uplink (direct, unprotected)
+        # Uncomment the line below only if you want unprotected fallback:
+        # iifname "{{ ap_interface }}" oifname "{{ uplink_interface }}" masquerade
+    }
+}

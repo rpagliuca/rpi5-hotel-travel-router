@@ -1,0 +1,10 @@
+name: rpi5-travel-router
+title: RPi5 Hotel Travel Router Compliance
+maintainer: rpagliuca
+version: 0.1.0
+license: MIT
+summary: Verifies the RPi5 travel router is correctly configured and operational
+
+supports:
+  - platform-name: debian
+  - platform-name: raspbian
