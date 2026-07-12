@@ -35,30 +35,34 @@
     mode: "0644"
   notify: Restart dnsmasq
 
+# hostapd must not start before uap0 exists (also covers manual restarts)
+- name: Create hostapd systemd drop-in directory
+  file:
+    path: /etc/systemd/system/hostapd.service.d
+    state: directory
+    mode: "0755"
+
+- name: Require uap0-create before hostapd
+  copy:
+    dest: /etc/systemd/system/hostapd.service.d/uap0.conf
+    content: |
+      [Unit]
+      Requires=uap0-create.service
+      After=uap0-create.service
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart hostapd
+
 - name: Enable and start hostapd
   systemd:
     name: hostapd
     enabled: true
     state: started
+    daemon_reload: true
 
 - name: Enable and start dnsmasq
   systemd:
     name: dnsmasq
     enabled: true
     state: started
-
-handlers:
-  - name: Restart hostapd
-    systemd:
-      name: hostapd
-      state: restarted
-
-  - name: Restart dnsmasq
-    systemd:
-      name: dnsmasq
-      state: restarted
-
-  - name: Restart systemd-networkd
-    systemd:
-      name: systemd-networkd
-      state: restarted

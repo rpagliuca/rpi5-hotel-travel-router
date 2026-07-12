@@ -1,0 +1,25 @@
+---
+- name: Reload NetworkManager
+  systemd:
+    name: NetworkManager
+    state: reloaded
+  failed_when: false
+
+- name: Restart wpa_supplicant
+  systemd:
+    name: "wpa_supplicant@{{ uplink_interface }}"
+    state: restarted
+
+- name: Reload systemd
+  systemd:
+    daemon_reload: true
+
+- name: Restart uap0-create
+  systemd:
+    name: uap0-create
+    state: restarted
+
+- name: Restart systemd-networkd
+  systemd:
+    name: systemd-networkd
+    state: restarted

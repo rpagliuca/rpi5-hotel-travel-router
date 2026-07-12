@@ -1,6 +1,8 @@
 # dnsmasq config for the private AP (uap0)
 interface={{ ap_interface }}
-bind-interfaces
+# bind-dynamic (not bind-interfaces): uap0 may not exist yet when dnsmasq
+# starts at boot; bind-dynamic picks the interface up when it appears
+bind-dynamic
 
 # DHCP range for clients
 dhcp-range={{ ap_dhcp_start }},{{ ap_dhcp_end }},255.255.255.0,24h

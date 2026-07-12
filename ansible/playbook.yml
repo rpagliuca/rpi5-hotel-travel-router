@@ -11,8 +11,13 @@
     tailscale_authkey: "{{ vault_tailscale_authkey }}"
 
   roles:
-    - base
-    - wifi-client
-    - access-point
-    - routing
-    - tailscale
+    - role: base
+      tags: [base]
+    - role: wifi-client
+      tags: [wifi-client]
+    - role: access-point
+      tags: [access-point]
+    - role: routing
+      tags: [routing]
+    - role: tailscale
+      tags: [tailscale]

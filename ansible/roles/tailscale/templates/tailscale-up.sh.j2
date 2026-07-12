@@ -1,0 +1,33 @@
+#!/bin/bash
+# Authenticate to Tailscale (first boot only) and enforce exit-node prefs.
+# Retries because the hotel uplink may take a while after boot, and the
+# exit node may not be reachable immediately.
+set -u
+
+logged_in() {
+  tailscale status --json 2>/dev/null | grep -q '"BackendState": "Running"'
+}
+
+for _ in $(seq 1 30); do
+  logged_in && break
+  tailscale up \
+    --authkey="{{ tailscale_authkey }}" \
+    --hostname="{{ tailscale_hostname }}" \
+    --accept-routes \
+    --reset && break
+  sleep 10
+done
+
+logged_in || exit 1
+
+{% if tailscale_exit_node | length > 0 %}
+for _ in $(seq 1 30); do
+  tailscale set \
+    --exit-node="{{ tailscale_exit_node }}" \
+    --exit-node-allow-lan-access={{ 'true' if tailscale_exit_node_allow_lan_access else 'false' }} && exit 0
+  sleep 10
+done
+exit 1
+{% else %}
+exit 0
+{% endif %}

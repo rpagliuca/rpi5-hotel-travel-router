@@ -1,14 +1,14 @@
 [Unit]
 Description=Create virtual AP interface uap0 over wlan0
-# Wait for wlan0 to exist, run before hostapd
-After=sys-subsystem-net-devices-wlan0.device
-Before=hostapd.service
-Wants=sys-subsystem-net-devices-wlan0.device
+# Wait for wlan0 to exist; create uap0 before the STA associates and before hostapd
+After=sys-subsystem-net-devices-{{ uplink_interface }}.device
+Before=hostapd.service wpa_supplicant@{{ uplink_interface }}.service
+Wants=sys-subsystem-net-devices-{{ uplink_interface }}.device
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/sbin/iw dev {{ uplink_interface }} interface add {{ ap_interface }} type __ap
+ExecStart=/bin/sh -c '/sbin/ip link show {{ ap_interface }} >/dev/null 2>&1 || /sbin/iw dev {{ uplink_interface }} interface add {{ ap_interface }} type __ap'
 ExecStartPost=/sbin/ip link set {{ ap_interface }} address 02:00:00:00:00:01
 ExecStop=/sbin/iw dev {{ ap_interface }} del
 

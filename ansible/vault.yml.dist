@@ -1,6 +1,7 @@
 ---
-# Copy this file to vault.yml and encrypt with:
-#   ansible-vault encrypt ansible/inventory/group_vars/all/vault.yml
+# Copy this file to inventory/group_vars/all/vault.yml and encrypt it:
+#   cp vault.yml.dist inventory/group_vars/all/vault.yml
+#   ansible-vault encrypt inventory/group_vars/all/vault.yml
 # Add vault password to ansible/.vault_pass (never commit that file).
 
 vault_ap_password: "CHANGE_ME_strong_wifi_password"

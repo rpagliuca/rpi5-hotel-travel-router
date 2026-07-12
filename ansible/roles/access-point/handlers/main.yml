@@ -1,0 +1,19 @@
+---
+- name: Reload systemd
+  systemd:
+    daemon_reload: true
+
+- name: Restart hostapd
+  systemd:
+    name: hostapd
+    state: restarted
+
+- name: Restart dnsmasq
+  systemd:
+    name: dnsmasq
+    state: restarted
+
+- name: Restart systemd-networkd
+  systemd:
+    name: systemd-networkd
+    state: restarted

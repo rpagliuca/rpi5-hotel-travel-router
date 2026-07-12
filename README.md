@@ -51,7 +51,7 @@ cd rpi5-hotel-travel-router/ansible
 ### 3. Set up secrets
 
 ```bash
-cp inventory/group_vars/all/vault.yml.dist inventory/group_vars/all/vault.yml
+cp vault.yml.dist inventory/group_vars/all/vault.yml
 
 # Edit vault.yml with your real credentials:
 #   vault_ap_password     — your private AP password
@@ -137,6 +137,7 @@ inspec exec inspec/ -t ssh://pi@<PI_IP> -i ~/.ssh/id_ed25519 --sudo
 
 Controls:
 - `ap_running.rb` — hostapd + uap0 interface + correct IP
+- `uplink.rb` — wpa_supplicant uplink running + NM unmanaged + internet reachable
 - `tailscale_connected.rb` — tailscaled running + authenticated + exit node set
 - `routing_enabled.rb` — IP forwarding + nftables masquerade rules
 - `dns_dhcp.rb` — dnsmasq running + DHCP/DNS listening
@@ -163,6 +164,7 @@ And remove the `uap0-create` service dependency from the `wifi-client` role — 
 
 ## Architecture notes
 
+- **NetworkManager (Bookworm default) is told to ignore `wlan0`/`uap0`** — those are managed by wpa_supplicant + systemd-networkd + hostapd. `eth0` stays under NetworkManager, so plugging an ethernet cable into a hotel port gives an uplink automatically (Tailscale rides over whichever uplink is active).
 - **No fallback NAT via hotel WiFi** — if Tailscale drops, AP clients lose internet intentionally (security: hotel WiFi is untrusted).
 - **DNS pushed to clients:** Tailscale MagicDNS (`100.100.100.100`) + Cloudflare fallback (`1.1.1.1`).
 - **AP clients can't reach hotel LAN** — `--exit-node-allow-lan-access` only allows the Pi itself (wlan0 subnet), not clients behind uap0.

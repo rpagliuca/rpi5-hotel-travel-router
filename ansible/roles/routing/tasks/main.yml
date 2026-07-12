@@ -19,9 +19,3 @@
     name: nftables
     enabled: true
     state: started
-
-handlers:
-  - name: Reload nftables
-    systemd:
-      name: nftables
-      state: restarted

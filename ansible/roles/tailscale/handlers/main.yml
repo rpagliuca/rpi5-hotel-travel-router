@@ -1,0 +1,10 @@
+---
+- name: Reload systemd
+  systemd:
+    daemon_reload: true
+
+- name: Restart tailscale-up
+  systemd:
+    name: tailscale-up
+    state: restarted
+  failed_when: false

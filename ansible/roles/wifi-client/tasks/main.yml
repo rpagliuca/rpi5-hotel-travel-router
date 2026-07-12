@@ -4,26 +4,36 @@
   command: rfkill unblock wifi
   changed_when: false
 
+# Raspberry Pi OS Bookworm manages interfaces with NetworkManager by default.
+# Keep it away from the radio; eth0 stays under NM (works as ethernet uplink
+# out of the box — Tailscale rides over whichever uplink is active).
+- name: Keep NetworkManager away from wlan0/uap0
+  copy:
+    dest: /etc/NetworkManager/conf.d/99-travel-router-unmanaged.conf
+    content: |
+      [keyfile]
+      unmanaged-devices=interface-name:{{ uplink_interface }};interface-name:{{ ap_interface }}
+    mode: "0644"
+  notify: Reload NetworkManager
+
+# The distro-global wpa_supplicant.service conflicts with the per-interface one
+- name: Disable global wpa_supplicant service
+  systemd:
+    name: wpa_supplicant
+    enabled: false
+  failed_when: false
+
 # wpa_supplicant config for hotel WiFi uplink
 - name: Deploy wpa_supplicant config for wlan0
   template:
     src: wpa_supplicant-wlan0.conf.j2
-    dest: /etc/wpa_supplicant/wpa_supplicant-wlan0.conf
+    dest: /etc/wpa_supplicant/wpa_supplicant-{{ uplink_interface }}.conf
     mode: "0600"
   notify: Restart wpa_supplicant
 
-# Prevent dhcpcd from managing wlan0 (we use systemd-networkd)
-- name: Ensure dhcpcd does not manage wlan0
-  lineinfile:
-    path: /etc/dhcpcd.conf
-    line: "denyinterfaces wlan0 uap0"
-    create: true
-  notify: Restart dhcpcd
-
-# Enable wpa_supplicant@wlan0 systemd service
 - name: Enable wpa_supplicant for wlan0
   systemd:
-    name: wpa_supplicant@wlan0
+    name: "wpa_supplicant@{{ uplink_interface }}"
     enabled: true
     state: started
 
@@ -43,17 +53,16 @@
     enabled: true
     daemon_reload: true
 
-# systemd-networkd: configure wlan0 to use DHCP for hotel WiFi IP
+# systemd-networkd: DHCP on wlan0 for the hotel WiFi IP
 - name: Deploy systemd-networkd config for wlan0
   copy:
     dest: /etc/systemd/network/20-wlan0.network
     content: |
       [Match]
-      Name=wlan0
+      Name={{ uplink_interface }}
 
       [Network]
       DHCP=yes
-      IPForward=yes
     mode: "0644"
   notify: Restart systemd-networkd
 
@@ -62,29 +71,3 @@
     name: systemd-networkd
     enabled: true
     state: started
-
-handlers:
-  - name: Restart wpa_supplicant
-    systemd:
-      name: wpa_supplicant@wlan0
-      state: restarted
-
-  - name: Restart dhcpcd
-    systemd:
-      name: dhcpcd
-      state: restarted
-    ignore_errors: true
-
-  - name: Reload systemd
-    systemd:
-      daemon_reload: true
-
-  - name: Restart uap0-create
-    systemd:
-      name: uap0-create
-      state: restarted
-
-  - name: Restart systemd-networkd
-    systemd:
-      name: systemd-networkd
-      state: restarted

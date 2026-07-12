@@ -15,7 +15,17 @@
     enabled: true
     state: started
 
-- name: Deploy tailscale-up service (for boot authentication + exit node)
+# The auth key lives in this root-only script, not in the unit file
+- name: Deploy tailscale-up script
+  template:
+    src: tailscale-up.sh.j2
+    dest: /usr/local/bin/tailscale-up.sh
+    mode: "0700"
+    owner: root
+    group: root
+  notify: Restart tailscale-up
+
+- name: Deploy tailscale-up service
   template:
     src: tailscale-up.service.j2
     dest: /etc/systemd/system/tailscale-up.service
@@ -24,25 +34,9 @@
     - Reload systemd
     - Restart tailscale-up
 
-- name: Enable tailscale-up service
+- name: Enable and start tailscale-up
   systemd:
     name: tailscale-up
     enabled: true
-    daemon_reload: true
-
-- name: Run tailscale-up now (first provisioning)
-  systemd:
-    name: tailscale-up
     state: started
-  ignore_errors: true
-
-handlers:
-  - name: Reload systemd
-    systemd:
-      daemon_reload: true
-
-  - name: Restart tailscale-up
-    systemd:
-      name: tailscale-up
-      state: restarted
-    ignore_errors: true
+    daemon_reload: true
