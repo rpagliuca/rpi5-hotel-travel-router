@@ -1,26 +1,33 @@
 ---
-# ── Private AP (your travel network) ──────────────────────────────────────────
-ap_ssid: "RafTravel"
-ap_interface: "uap0"        # virtual AP interface over onboard wlan0
-ap_channel: 6               # must match uplink channel (set by hotel WiFi)
+# Defaults GENÉRICOS do projeto. Nada pessoal aqui — o que é específico do seu
+# ambiente (SSIDs, senhas, authkey, exit node, IP do Pi) vai em config.yml
+# (gitignored, veja config.example.yml) e sobrepõe estes valores via `-e @config.yml`.
+
+# ── AP privado ────────────────────────────────────────────────────────────────
+ap_ssid: "TravelRouter"     # override em config.yml
+ap_interface: "uap0"        # AP virtual sobre a wlan0 onboard
+ap_channel: 6               # canal padrão/fallback (auto-sincronizado se ap_channel_auto)
+ap_channel_auto: true       # rádio único: re-sincroniza o canal do AP com o do uplink
 ap_subnet: "192.168.88.0/24"
 ap_ip: "192.168.88.1"
 ap_dhcp_start: "192.168.88.100"
 ap_dhcp_end: "192.168.88.150"
-ap_hw_mode: "g"             # "g" = 2.4GHz; change to "a" for 5GHz if adapter supports it
+ap_hw_mode: "g"             # "g" = 2.4GHz; "a" para 5GHz se o rádio suportar
 
-# ── Uplink (hotel WiFi client) ─────────────────────────────────────────────────
-uplink_interface: "wlan0"   # onboard radio; shares channel with uap0
+# ── Uplink (cliente do hotel) ─────────────────────────────────────────────────
+uplink_interface: "wlan0"   # rádio onboard; compartilha canal com o uap0
+hotel_open: false           # override em config.yml (true p/ redes abertas)
+eth_interface: "eth0"       # uplink ethernet alternativo
 
-# ── Ethernet uplink fallback ───────────────────────────────────────────────────
-eth_interface: "eth0"
-
-# ── Tailscale ──────────────────────────────────────────────────────────────────
+# ── Tailscale ─────────────────────────────────────────────────────────────────
 tailscale_hostname: "rpi5-travel-router"
-# Set exit_node to the Tailscale machine name (e.g. "laptop2023") or its IP.
-# Leave empty to disable automatic exit node selection.
-tailscale_exit_node: "laptop2023"
 tailscale_exit_node_allow_lan_access: true
+# tailscale_exit_node e tailscale_authkey: obrigatórios, definidos em config.yml.
 
-# ── System ─────────────────────────────────────────────────────────────────────
-timezone: "America/Sao_Paulo"
+# ── Modo do roteador (captive portal) ──────────────────────────────────────────
+# "secure" -> clientes saem só via Tailscale (padrão). "portal" -> direto p/ login.
+# Alterna em runtime: `travel-router portal` / `travel-router secure`.
+travel_router_boot_mode: "secure"
+
+# ── Sistema ─────────────────────────────────────────────────────────────────────
+timezone: "UTC"             # override em config.yml

@@ -1,0 +1,13 @@
+[Unit]
+Description=Re-sintoniza o canal do hostapd com o uplink (wlan0) — best-effort
+# Roda DEPOIS do AP ja estar de pe. NAO bloqueia a subida do hostapd.
+After=hostapd.service wpa_supplicant@{{ uplink_interface }}.service
+Wants=wpa_supplicant@{{ uplink_interface }}.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/hostapd-channel-sync.sh
+
+[Install]
+WantedBy=multi-user.target

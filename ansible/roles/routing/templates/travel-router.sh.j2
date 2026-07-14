@@ -1,0 +1,50 @@
+#!/bin/bash
+# travel-router — alterna o roteamento dos clientes do AP entre:
+#   secure  -> só via Tailscale (exit node)         [seguro, padrão]
+#   portal  -> direto pela {{ uplink_interface }}    [temporário, p/ captive portal]
+# e mostra status. NÃO derruba o AP em nenhum caso.
+set -u
+
+MODE_FILE=/run/travel-router.mode
+EXIT_NODE="{{ tailscale_exit_node }}"
+ALLOW_LAN={{ 'true' if tailscale_exit_node_allow_lan_access else 'false' }}
+NFT_SECURE=/etc/nftables.conf
+NFT_PORTAL=/etc/nftables-portal.conf
+
+need_root() { [ "$(id -u)" = "0" ] || { echo "rode com sudo"; exit 1; }; }
+
+apply_secure() {
+  need_root
+  if [ -n "$EXIT_NODE" ]; then
+    tailscale set --exit-node="$EXIT_NODE" --exit-node-allow-lan-access="$ALLOW_LAN" || true
+  fi
+  nft -f "$NFT_SECURE"
+  echo secure > "$MODE_FILE"
+  echo "MODO SEGURO: clientes do AP saem via Tailscale (${EXIT_NODE:-sem exit node})."
+}
+
+apply_portal() {
+  need_root
+  # tira o exit node para o tráfego do próprio Pi (e dos clientes) ir direto
+  tailscale set --exit-node= 2>/dev/null || true
+  nft -f "$NFT_PORTAL"
+  echo portal > "$MODE_FILE"
+  echo "MODO PORTAL: clientes saem DIRETO pela {{ uplink_interface }}."
+  echo "Abra o captive portal no navegador; ao terminar rode: travel-router secure"
+}
+
+status() {
+  echo "modo atual : $(cat "$MODE_FILE" 2>/dev/null || echo desconhecido)"
+  echo -n "uplink     : "; iw dev {{ uplink_interface }} link 2>/dev/null | awk '/SSID/{print $2" (ch "$0")"; f=1} END{if(!f)print "desconectado"}' | head -1
+  echo -n "internet   : "; curl -fsS --max-time 4 http://1.1.1.1 -o /dev/null 2>/dev/null && echo "ok" || echo "sem internet (ou captive portal)"
+  echo -n "tailscale  : "; tailscale status 2>/dev/null | awk 'NR==1{print $1, $2}' || echo "?"
+  echo -n "exit node  : "; tailscale status --json 2>/dev/null | grep -o '"ExitNodeStatus":[^}]*' >/dev/null 2>&1 && tailscale status 2>/dev/null | grep -i "exit node" | head -1 || echo "(ver 'tailscale status')"
+  echo -n "AP hostapd : "; systemctl is-active hostapd
+}
+
+case "${1:-}" in
+  secure) apply_secure ;;
+  portal) apply_portal ;;
+  status|"") status ;;
+  *) echo "uso: travel-router {portal|secure|status}"; exit 1 ;;
+esac

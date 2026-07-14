@@ -1,0 +1,7 @@
+[Unit]
+Description=Watchdog do AP privado (repara uap0/hostapd/IP/dnsmasq)
+After=hostapd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ap-watchdog.sh

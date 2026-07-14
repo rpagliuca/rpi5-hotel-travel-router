@@ -1,0 +1,30 @@
+#!/bin/bash
+# Best-effort: ajusta o canal do hostapd para casar com o canal em que a wlan0
+# (uplink) associou no hotel. Rádio único => AP e uplink DEVEM compartilhar o
+# canal. IMPORTANTE: NÃO bloqueia a subida do AP. O AP sobe primeiro num canal
+# fixo; este script só RE-SINTONIZA depois, se o uplink associar noutro canal.
+# Se a wlan0 não associar, o AP fica no canal atual (fundação intacta).
+set -u
+
+UPLINK="{{ uplink_interface }}"
+CONF="/etc/hostapd/hostapd.conf"
+
+for i in $(seq 1 60); do
+  ch="$(iw dev "$UPLINK" info 2>/dev/null | awk '/channel/{print $2; exit}')"
+  if [ -n "${ch:-}" ]; then
+    cur="$(awk -F= '/^channel=/{print $2; exit}' "$CONF")"
+    if [ "$ch" != "$cur" ]; then
+      sed -i "s/^channel=.*/channel=$ch/" "$CONF"
+      logger -t hostapd-channel-sync "uplink no canal $ch; re-sintonizando AP (era $cur)"
+      # reinício curto do AP no novo canal (o cliente reconecta sozinho)
+      systemctl restart hostapd || true
+    else
+      logger -t hostapd-channel-sync "uplink e AP ja no mesmo canal ($ch)"
+    fi
+    exit 0
+  fi
+  sleep 2
+done
+
+logger -t hostapd-channel-sync "wlan0 nao associou; AP mantido no canal atual"
+exit 0

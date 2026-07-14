@@ -1,0 +1,39 @@
+---
+# ═══════════════════════════════════════════════════════════════════════════
+#  CONFIGURAÇÃO LOCAL — copie para config.yml (gitignored) e preencha.
+#
+#    cp config.example.yml config.yml
+#    $EDITOR config.yml
+#    ansible-playbook playbook.yml -e @config.yml
+#
+#  NUNCA comite config.yml — ele tem seus segredos (senha do AP, authkey, etc).
+#  Não há vault: como config.yml é gitignored, os segredos nunca vão pro repo.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── Alvo: o Raspberry Pi ──────────────────────────────────────────────────────
+ansible_host: "192.168.88.1"      # IP do Pi: pela tailnet (100.x), LAN, ou 192.168.88.1 pelo próprio AP
+ansible_user: "pi"                # usuário SSH no Pi
+
+# ── Seu AP privado (a rede que você cria) ─────────────────────────────────────
+ap_ssid: "TravelRouter"           # nome da sua rede Wi-Fi privada
+ap_password: "TROQUE_por_uma_senha_forte"   # >= 8 caracteres. SÓ VOCÊ sabe.
+
+# ── Wi-Fi do hotel (uplink) ───────────────────────────────────────────────────
+hotel_ssid: "HotelWiFi"           # nome da rede do hotel (muda a cada viagem)
+hotel_open: false                 # true = rede ABERTA (sem senha), ex.: GTvisitor
+hotel_password: ""                # senha do hotel; deixe "" se hotel_open: true
+
+# ── Tailscale ─────────────────────────────────────────────────────────────────
+# Gere a authkey em https://login.tailscale.com/admin/settings/keys
+tailscale_authkey: "tskey-auth-XXXXXXXXXXXX"
+tailscale_hostname: "rpi5-travel-router"
+tailscale_exit_node: "my-exit-node"   # NOME EXATO em `tailscale status` (ou o IP 100.x)
+tailscale_exit_node_allow_lan_access: true
+
+# ── Sistema ───────────────────────────────────────────────────────────────────
+timezone: "America/Sao_Paulo"
+
+# ── Opcionais (têm padrão em group_vars/all/main.yml; descomente p/ mudar) ─────
+# ap_channel: 6
+# ap_channel_auto: true
+# travel_router_boot_mode: "secure"   # ou "portal"
