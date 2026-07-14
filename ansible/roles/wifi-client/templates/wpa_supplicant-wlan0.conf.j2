@@ -5,8 +5,13 @@ country=BR
 # Hotel WiFi (uplink). Update SSID/PSK when you arrive.
 network={
     ssid="{{ hotel_ssid }}"
+{% if hotel_open | default(false) %}
+    # Rede aberta (sem senha) — ex.: GTvisitor. Login e via captive portal.
+    key_mgmt=NONE
+{% else %}
     psk="{{ hotel_password }}"
     key_mgmt=WPA-PSK
+{% endif %}
     scan_ssid=1
     priority=10
 }

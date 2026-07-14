@@ -7,12 +7,44 @@ Ansible + InSpec IaC to turn a **Raspberry Pi 5** into a travel router: connects
      ↑  wlan0 (client — uplink)
 [Raspberry Pi 5]
      ↓  uap0 (AP — your private network)
-[laptop]  [iPhone]  →  tailscale0  →  exit node (laptop2023)  →  internet
+[laptop]  [phone]  →  tailscale0  →  exit node (your tailnet)  →  internet
 ```
 
 > **Both interfaces share the onboard radio.** AP and hotel uplink run on the same channel
 > (limitation of single-radio concurrent mode). Performance is adequate for travel use.
 > For better isolation, add a USB WiFi dongle (see [Upgrade: USB dongle](#upgrade-usb-dongle)).
+
+---
+
+## Fundação: o AP privado nunca cai 🛡️
+
+A prioridade nº1 é **nunca perder acesso ao Pi**. O AP privado (`TravelRouter`,
+`192.168.88.1`) é a âncora de segurança:
+
+- **Sobe primeiro e desacoplado.** `hostapd` depende apenas do `uap0-create`
+  (interface local) — **não** espera hotel, Tailscale ou roteamento. Se qualquer
+  etapa seguinte falhar, o AP continua de pé e você entra por `ssh <user>@192.168.88.1`.
+- **Auto-recupera.** `hostapd` roda com `Restart=always`, e um **watchdog**
+  (`ap-watchdog`, a cada 60s) repara `uap0`, o IP estático, o `hostapd` e o
+  `dnsmasq` se algo cair.
+- **Senha pessoal.** O AP usa WPA2 com a sua `ap_password` (do `config.yml`) —
+  só você entra. SSH pela sub-rede do AP é sempre liberado no firewall.
+- **Rádio único:** o canal do AP é re-sincronizado (best-effort) com o canal do
+  hotel *depois* de o AP já estar no ar — sem nunca bloquear a subida do AP.
+
+## Modos: `portal` ↔ `secure`
+
+Redes de hotel exigem login (captive portal) e são não-confiáveis. Por isso há
+dois modos, alternáveis em runtime:
+
+```bash
+sudo travel-router portal   # clientes saem DIRETO pela wlan0 (para logar no hotel)
+sudo travel-router secure   # clientes saem SÓ via Tailscale (uso normal)
+sudo travel-router status   # modo, uplink, internet, tailscale, hostapd
+```
+
+Boot inicia no modo `travel_router_boot_mode` (padrão `secure`). Detalhes do login:
+[docs/captive-portal.md](docs/captive-portal.md).
 
 ---
 
@@ -32,14 +64,15 @@ Ansible + InSpec IaC to turn a **Raspberry Pi 5** into a travel router: connects
 
 ### 1. Prerequisites
 
-- Raspberry Pi 5 running **Raspberry Pi OS Bookworm (64-bit)**
+- Raspberry Pi 5 running **Raspberry Pi OS Bookworm ou Trixie (64-bit)**
 - SSH access with your key already in `~/.ssh/authorized_keys` on the Pi
-- `ansible`, `ansible-vault` installed on your laptop
-- `tailscale` running on the exit node (`laptop2023`) with exit node enabled:
+- `ansible` installed on your laptop (`pipx install ansible` ou `brew install ansible`)
+- A **Tailscale exit node** já rodando na sua tailnet, com o exit node habilitado:
   ```bash
-  # On laptop2023:
+  # No dispositivo que será o exit node:
   tailscale set --advertise-exit-node
   ```
+  (aprove-o em https://login.tailscale.com/admin/machines)
 
 ### 2. Clone this repo
 
@@ -48,75 +81,80 @@ git clone https://github.com/rpagliuca/rpi5-hotel-travel-router
 cd rpi5-hotel-travel-router/ansible
 ```
 
-### 3. Set up secrets
+### 3. Crie seu config.yml (gitignored)
+
+Todos os valores específicos do seu ambiente (IP do Pi, SSIDs, senhas, authkey,
+exit node) ficam em `config.yml` — que **nunca** é comitado. Não há vault: como o
+arquivo é gitignored, os segredos jamais vão para o repositório.
 
 ```bash
-cp vault.yml.dist inventory/group_vars/all/vault.yml
-
-# Edit vault.yml with your real credentials:
-#   vault_ap_password     — your private AP password
-#   vault_hotel_ssid      — hotel WiFi name (update per trip)
-#   vault_hotel_password  — hotel WiFi password (update per trip)
-#   vault_tailscale_authkey — from https://login.tailscale.com/admin/settings/keys
-
-echo "my-vault-passphrase" > .vault_pass   # never commit this file
-ansible-vault encrypt inventory/group_vars/all/vault.yml
+cp config.example.yml config.yml
+$EDITOR config.yml   # preencha TODOS os campos (veja os comentários no arquivo)
 ```
 
-### 4. Update inventory
+Campos obrigatórios: `ansible_host`, `ansible_user`, `ap_ssid`, `ap_password`,
+`hotel_ssid`, `hotel_open`/`hotel_password`, `tailscale_authkey`, `tailscale_exit_node`.
 
-Edit `inventory/hosts.yml` and set `ansible_host` to your Pi's current IP.
-
-### 5. Run the playbook
+### 4. Run the playbook
 
 ```bash
-ansible-playbook playbook.yml
+ansible-playbook playbook.yml -e @config.yml
 ```
 
-The Pi will:
-1. Install hostapd, dnsmasq, nftables, wpa_supplicant, tailscale
-2. Create the `uap0` virtual interface
-3. Start the private AP (`RafTravel` by default)
-4. Connect to hotel WiFi
-5. Authenticate to Tailscale and set the exit node
+O playbook valida o `config.yml` no início (falha rápido se faltar algo) e então:
+1. Sobe **primeiro** o AP privado (`ap_ssid`, sua senha) — a âncora que não cai
+2. Instala hostapd, dnsmasq, nftables, wpa_supplicant, tailscale
+3. Conecta no Wi-Fi do hotel (uplink)
+4. Autentica no Tailscale
+5. Aplica o modo padrão (`secure`): clientes → Tailscale → exit node
 
-### 6. Connect your devices
+### 5. Connect your devices
 
-Join the `RafTravel` network (or your configured `ap_ssid`) with `vault_ap_password`.
-All traffic exits via the Tailscale exit node.
+Conecte no seu AP (`ap_ssid`) com a senha `ap_password`. No modo `secure`, todo o
+tráfego sai pelo exit node do Tailscale.
 
 Verify:
 ```bash
-# From your laptop on the AP:
-curl https://ifconfig.me   # should return exit node's IP, not hotel's IP
+# Do seu laptop conectado no AP:
+curl https://ifconfig.me   # deve mostrar o IP do exit node, não o do hotel
 ```
 
 ---
 
 ## Configuration
 
-Edit `ansible/inventory/group_vars/all/main.yml`:
+**Valores do seu ambiente** (SSIDs, senhas, authkey, exit node, IP do Pi): em
+`config.yml` (a partir de `config.example.yml`). Veja os campos lá.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ap_ssid` | `RafTravel` | Your private AP name |
-| `ap_channel` | `6` | WiFi channel (must match hotel uplink channel) |
-| `ap_ip` | `192.168.88.1` | Pi's IP on the AP subnet |
-| `tailscale_exit_node` | `laptop2023` | Tailscale node to use as exit |
-| `timezone` | `America/Sao_Paulo` | System timezone |
+**Defaults genéricos** (raramente mudam): `ansible/inventory/group_vars/all/main.yml`.
+Para sobrescrever um deles, basta colocar a chave no seu `config.yml` (extra-vars
+via `-e @config.yml` têm precedência sobre o `main.yml`).
+
+| Variável (config.yml) | Exemplo | Descrição |
+|-----------------------|---------|-------------|
+| `ap_ssid` / `ap_password` | `TravelRouter` / *forte* | Seu AP privado e a senha (só você sabe) |
+| `hotel_ssid` | `GTvisitor` | Wi-Fi do hotel (muda por viagem) |
+| `hotel_open` / `hotel_password` | `true` / `""` | Rede aberta (ex.: GTvisitor) ou com senha |
+| `tailscale_authkey` | `tskey-auth-…` | Auth key da sua tailnet |
+| `tailscale_exit_node` | *nome exato* | Nó usado como exit (nome de `tailscale status` ou IP) |
+| `travel_router_boot_mode` | `secure` | Modo no boot (`secure`/`portal`) — opcional |
+| `timezone` | `America/Sao_Paulo` | Fuso — opcional |
+
+> **OS:** Raspberry Pi OS **Bookworm ou Trixie** (64-bit).
 
 ---
 
 ## Changing hotels (per-trip)
 
-Only the hotel credentials change. Update `vault.yml` and re-run the `wifi-client` tag:
+Só as credenciais do hotel mudam. Edite `config.yml` (`hotel_ssid`,
+`hotel_open`/`hotel_password`) e rode só a tag `wifi-client`:
 
 ```bash
-ansible-vault edit inventory/group_vars/all/vault.yml
-# change vault_hotel_ssid and vault_hotel_password
-
-ansible-playbook playbook.yml --tags wifi-client
+$EDITOR config.yml
+ansible-playbook playbook.yml -e @config.yml --tags wifi-client
 ```
+
+Ou, sem ansible, direto no Pi via o web app do AP (roadmap) / `travel-router`.
 
 ---
 
@@ -124,7 +162,9 @@ ansible-playbook playbook.yml --tags wifi-client
 
 See [docs/captive-portal.md](docs/captive-portal.md) for the full flow.
 
-Short version: SSH into the Pi (`pi@192.168.88.1`) and complete the login with `w3m`, or use SSH port forwarding to open the portal in your laptop's browser.
+Versão curta: conecte no AP `TravelRouter`, entre em modo portal
+(`ssh <user>@192.168.88.1 'sudo travel-router portal'`), faça o login do hotel no
+navegador normal e volte para `sudo travel-router secure`.
 
 ---
 
@@ -132,7 +172,8 @@ Short version: SSH into the Pi (`pi@192.168.88.1`) and complete the login with `
 
 ```bash
 # Install InSpec: https://docs.chef.io/inspec/install/
-inspec exec inspec/ -t ssh://pi@<PI_IP> -i ~/.ssh/id_ed25519 --sudo
+# Use o ansible_user e ansible_host do seu config.yml:
+inspec exec inspec/ -t ssh://<ansible_user>@<ansible_host> -i ~/.ssh/id_ed25519 --sudo
 ```
 
 Controls:
@@ -164,7 +205,7 @@ And remove the `uap0-create` service dependency from the `wifi-client` role — 
 
 ## Architecture notes
 
-- **NetworkManager (Bookworm default) is told to ignore `wlan0`/`uap0`** — those are managed by wpa_supplicant + systemd-networkd + hostapd. `eth0` stays under NetworkManager, so plugging an ethernet cable into a hotel port gives an uplink automatically (Tailscale rides over whichever uplink is active).
+- **NetworkManager (Bookworm/Trixie default) is told to ignore `wlan0`/`uap0`** — those are managed by wpa_supplicant + systemd-networkd + hostapd. `eth0` stays under NetworkManager, so plugging an ethernet cable into a hotel port gives an uplink automatically (Tailscale rides over whichever uplink is active).
 - **No fallback NAT via hotel WiFi** — if Tailscale drops, AP clients lose internet intentionally (security: hotel WiFi is untrusted).
 - **DNS pushed to clients:** Tailscale MagicDNS (`100.100.100.100`) + Cloudflare fallback (`1.1.1.1`).
 - **AP clients can't reach hotel LAN** — `--exit-node-allow-lan-access` only allows the Pi itself (wlan0 subnet), not clients behind uap0.
@@ -173,6 +214,8 @@ And remove the `uap0-create` service dependency from the `wifi-client` role — 
 
 ## Security
 
-- Never commit `vault.yml` or `.vault_pass` — both are in `.gitignore`
-- Tailscale auth key: use a **pre-auth key with expiry** (`tag:travel-router`) from the admin console
-- SSH password auth is disabled by the `base` role
+- **Nunca comite `config.yml`** — ele tem seus segredos e está no `.gitignore`.
+  Este repo é público e reutilizável: todo dado pessoal fica no seu `config.yml` local.
+- Tailscale auth key: use uma **pre-auth key com expiração** (idealmente `tag:…`) do admin console.
+- SSH password auth is disabled by the `base` role.
+- O AP privado usa WPA2 com a sua `ap_password` — só você entra na rede de gestão.

@@ -35,6 +35,31 @@
     mode: "0644"
   notify: Restart dnsmasq
 
+# ── Auto-sync do canal do AP com o canal do uplink (radio unico) ──────────────
+- name: Deploy hostapd channel-sync script
+  template:
+    src: hostapd-channel-sync.sh.j2
+    dest: /usr/local/bin/hostapd-channel-sync.sh
+    mode: "0755"
+  when: ap_channel_auto | default(true)
+
+- name: Deploy hostapd channel-sync service
+  template:
+    src: hostapd-channel-sync.service.j2
+    dest: /etc/systemd/system/hostapd-channel-sync.service
+    mode: "0644"
+  when: ap_channel_auto | default(true)
+  notify:
+    - Reload systemd
+    - Restart hostapd
+
+- name: Enable hostapd channel-sync service
+  systemd:
+    name: hostapd-channel-sync
+    enabled: true
+    daemon_reload: true
+  when: ap_channel_auto | default(true)
+
 # hostapd must not start before uap0 exists (also covers manual restarts)
 - name: Create hostapd systemd drop-in directory
   file:
@@ -42,13 +67,25 @@
     state: directory
     mode: "0755"
 
-- name: Require uap0-create before hostapd
+# AP-FIRST: hostapd depende SÓ do uap0-create (interface local). Não espera
+# uplink, tailscale nem channel-sync. Restart=always => o AP se auto-recupera.
+- name: Harden hostapd (AP-first + auto-restart)
   copy:
     dest: /etc/systemd/system/hostapd.service.d/uap0.conf
     content: |
       [Unit]
       Requires=uap0-create.service
       After=uap0-create.service
+      # channel-sync é soft (Wants), nunca bloqueia a subida do AP
+      {% if ap_channel_auto | default(true) %}
+      Wants=hostapd-channel-sync.service
+      {% endif %}
+      # Nunca desistir de reiniciar o AP (rate limit desligado)
+      StartLimitIntervalSec=0
+
+      [Service]
+      Restart=always
+      RestartSec=3
     mode: "0644"
   notify:
     - Reload systemd
@@ -66,3 +103,31 @@
     name: dnsmasq
     enabled: true
     state: started
+
+# ── Watchdog do AP: repara uap0/hostapd/IP/dnsmasq a cada minuto ──────────────
+- name: Deploy AP watchdog script
+  template:
+    src: ap-watchdog.sh.j2
+    dest: /usr/local/bin/ap-watchdog.sh
+    mode: "0755"
+
+- name: Deploy AP watchdog service
+  template:
+    src: ap-watchdog.service.j2
+    dest: /etc/systemd/system/ap-watchdog.service
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Deploy AP watchdog timer
+  template:
+    src: ap-watchdog.timer.j2
+    dest: /etc/systemd/system/ap-watchdog.timer
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Enable and start AP watchdog timer
+  systemd:
+    name: ap-watchdog.timer
+    enabled: true
+    state: started
+    daemon_reload: true

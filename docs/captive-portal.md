@@ -1,67 +1,63 @@
-# Captive Portal — Hotel Login Flow
+# Captive Portal — Login no WiFi do Hotel
 
-Most hotels redirect HTTP traffic to a login page before granting internet access. Since the RPi handles the uplink, **you** need to complete the portal from the Pi itself (not from your laptop/iPhone, which are behind the Pi's AP).
+A maioria dos hotéis redireciona o tráfego HTTP para uma página de login antes de
+liberar a internet. Como o Pi é quem faz o uplink, **o login é feito a partir do
+Pi / da rede do Pi**, não do seu laptop conectado direto no hotel.
 
-## Method 1 — SSH into the Pi and use a text browser
+## Como isso funciona aqui (modo portal ↔ seguro)
 
-```bash
-# Connect to the Pi (it's already on your Tailscale network after first provisioning,
-# or use its IP on your AP subnet: 192.168.88.1)
-ssh pi@rpi5-travel-router
+O roteador tem dois modos, alternáveis em runtime pelo comando `travel-router`
+(ou, no futuro, pelo web app em `http://192.168.88.1`):
 
-# Check if you have internet
-curl -s --max-time 5 http://1.1.1.1 -o /dev/null && echo "online" || echo "captive portal"
+| Modo | Roteamento dos clientes do AP | Quando usar |
+|------|-------------------------------|-------------|
+| `portal` | **direto** pela `wlan0` (sem Tailscale) | para abrir/completar o login do hotel |
+| `secure` | **só** via Tailscale (exit node) | uso normal, depois de logar |
 
-# Open the portal in a text browser
-sudo apt install -y w3m
-w3m http://captive.apple.com     # triggers redirect to portal on most networks
-# Navigate with arrow keys, fill form, press Enter
-```
+> ⚠️ No modo `portal` o tráfego passa em claro pela rede do hotel. Use só para o
+> login e volte para `secure` em seguida.
 
-## Method 2 — SSH port forward + browser on laptop
+## Não há "ovo e galinha"
 
-Forward a local port to the Pi's `wlan0` interface so you can browse the portal from your laptop:
+O AP privado do Pi (`TravelRouter`, `192.168.88.1`) é uma **rede local** que sobe
+primeiro e **independe de internet**. Você alcança o Pi por ela mesmo antes de
+qualquer login no hotel.
 
-```bash
-# On your laptop (connected to the Pi's AP or via Tailscale):
-ssh -D 1080 pi@192.168.88.1
+## Fluxo ao chegar no hotel
 
-# Then configure your laptop's browser to use SOCKS5 proxy 127.0.0.1:1080
-# Visit http://captive.apple.com — portal appears in your browser
-# Complete login, then the Pi's wlan0 has internet
-```
+1. Ligue o Pi. O AP privado sobe sozinho (sua `ap_password`, do `config.yml`).
+2. Conecte seu laptop/celular no `TravelRouter`.
+3. Entre em modo portal:
+   ```bash
+   ssh <user>@192.168.88.1 'sudo travel-router portal'
+   ```
+4. Abra qualquer site HTTP no navegador normal → o portal do hotel aparece → faça login.
+5. Volte para o modo seguro:
+   ```bash
+   ssh <user>@192.168.88.1 'sudo travel-router secure'
+   ```
+6. Confirme:
+   ```bash
+   curl https://ifconfig.me   # deve mostrar o IP do exit node, não o do hotel
+   ```
 
-## Method 3 — MAC address cloning (pre-login)
-
-Some hotels allow any device once you've logged in once with a specific MAC. Clone your laptop's MAC to the Pi's `wlan0`:
-
-```bash
-# On the Pi:
-sudo ip link set wlan0 down
-sudo ip link set wlan0 address AA:BB:CC:DD:EE:FF   # your laptop's MAC
-sudo ip link set wlan0 up
-sudo systemctl restart wpa_supplicant@wlan0
-```
-
-To make this permanent, set the MAC in the wpa_supplicant config:
-```
-network={
-    ...
-    mac_addr=1   # use current interface MAC
-}
-```
-
-## After completing the portal
-
-Once the Pi's `wlan0` has internet access, Tailscale will (re)connect and your AP clients will route through the exit node automatically. Verify:
+## Diagnóstico
 
 ```bash
-tailscale status       # should show exit node active
-curl https://ifconfig.me   # should show exit node's IP, not hotel IP
+ssh <user>@192.168.88.1 'sudo travel-router status'
+# mostra: modo atual, uplink/canal, internet, tailscale, hostapd
 ```
 
-## Tips
+## Alternativas de login (sem trocar de modo)
 
-- Keep a phone hotspot ready as backup (change `hotel_ssid`/`hotel_password` in vars and re-run the `wifi-client` role tag: `ansible-playbook playbook.yml --tags wifi-client`).
-- Some hotels use HTTPS portals — you may need to accept a self-signed cert in the text browser.
-- Hotel DHCP sometimes uses short leases (30 min). `dhcpcd` / `systemd-networkd` renews automatically.
+- **Navegador de texto no Pi:** `ssh <user>@192.168.88.1`, `sudo apt install -y w3m`,
+  `w3m http://captive.apple.com`.
+- **Proxy SOCKS:** `ssh -D 1080 <user>@192.168.88.1` e aponte o navegador para
+  SOCKS5 `127.0.0.1:1080`.
+
+## Dicas
+
+- Alguns hotéis liberam por MAC. Dá para clonar o MAC do seu laptop na `wlan0`
+  (ver histórico de MAC cloning) para pular o login em reconexões.
+- Portais HTTPS podem exigir aceitar um certificado.
+- Leases curtos (30 min) são renovados automaticamente pelo systemd-networkd.

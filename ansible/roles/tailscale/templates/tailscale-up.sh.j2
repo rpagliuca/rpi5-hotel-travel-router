@@ -1,7 +1,8 @@
 #!/bin/bash
-# Authenticate to Tailscale (first boot only) and enforce exit-node prefs.
-# Retries because the hotel uplink may take a while after boot, and the
-# exit node may not be reachable immediately.
+# Autentica o Tailscale (só a primeira vez). Best-effort: se o uplink do hotel
+# ainda não subiu, tenta várias vezes e desiste sem afetar o AP.
+# O exit node NÃO é definido aqui — quem controla isso é o `travel-router`
+# (modo secure/portal). Assim o modo portal consegue tirar o exit node sem briga.
 set -u
 
 logged_in() {
@@ -9,25 +10,13 @@ logged_in() {
 }
 
 for _ in $(seq 1 30); do
-  logged_in && break
+  logged_in && exit 0
   tailscale up \
     --authkey="{{ tailscale_authkey }}" \
     --hostname="{{ tailscale_hostname }}" \
-    --accept-routes \
-    --reset && break
+    --accept-routes && exit 0
   sleep 10
 done
 
-logged_in || exit 1
-
-{% if tailscale_exit_node | length > 0 %}
-for _ in $(seq 1 30); do
-  tailscale set \
-    --exit-node="{{ tailscale_exit_node }}" \
-    --exit-node-allow-lan-access={{ 'true' if tailscale_exit_node_allow_lan_access else 'false' }} && exit 0
-  sleep 10
-done
-exit 1
-{% else %}
+# Não bloqueia nada se falhar — o AP e o SSH local continuam de pé.
 exit 0
-{% endif %}

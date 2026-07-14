@@ -7,15 +7,43 @@
     sysctl_file: /etc/sysctl.d/90-router.conf
     reload: true
 
-- name: Deploy nftables config
+# /etc/nftables.conf = ruleset do MODO SEGURO (carregado no boot pelo serviço)
+- name: Deploy nftables config (secure ruleset)
   template:
     src: nftables.conf.j2
     dest: /etc/nftables.conf
     mode: "0644"
   notify: Reload nftables
 
+# ruleset do MODO PORTAL (carregado sob demanda pelo `travel-router portal`)
+- name: Deploy nftables portal ruleset
+  template:
+    src: nftables-portal.conf.j2
+    dest: /etc/nftables-portal.conf
+    mode: "0644"
+
 - name: Enable and start nftables
   systemd:
     name: nftables
     enabled: true
     state: started
+
+# ── CLI travel-router (alterna portal/seguro) ─────────────────────────────────
+- name: Deploy travel-router CLI
+  template:
+    src: travel-router.sh.j2
+    dest: /usr/local/bin/travel-router
+    mode: "0755"
+
+- name: Deploy travel-router boot-mode service
+  template:
+    src: travel-router-boot.service.j2
+    dest: /etc/systemd/system/travel-router-boot.service
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Enable travel-router boot-mode service
+  systemd:
+    name: travel-router-boot
+    enabled: true
+    daemon_reload: true

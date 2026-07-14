@@ -3,12 +3,25 @@
   hosts: rpi5
   gather_facts: true
 
-  vars:
-    # Merge vault secrets into usable vars
-    ap_password: "{{ vault_ap_password }}"
-    hotel_ssid: "{{ vault_hotel_ssid }}"
-    hotel_password: "{{ vault_hotel_password }}"
-    tailscale_authkey: "{{ vault_tailscale_authkey }}"
+  # Todos os valores específicos do seu ambiente vêm do config.yml (gitignored):
+  #   ansible-playbook playbook.yml -e @config.yml
+  # (veja config.example.yml). Sem vault: config.yml nunca é commitado.
+
+  pre_tasks:
+    - name: Validar que o config.yml foi carregado (vars obrigatórios)
+      assert:
+        that:
+          - ap_password is defined and ap_password | length >= 8
+          - hotel_ssid is defined and hotel_ssid | length > 0
+          - tailscale_authkey is defined and tailscale_authkey.startswith('tskey-')
+          - tailscale_exit_node is defined and tailscale_exit_node | length > 0
+          - hotel_open or (hotel_password | default('') | length > 0)
+        fail_msg: >-
+          Config incompleto. Rode com `-e @config.yml` e preencha os campos
+          obrigatorios (veja config.example.yml): ap_password (>=8), hotel_ssid,
+          tailscale_authkey, tailscale_exit_node e, se hotel_open=false, hotel_password.
+        quiet: true
+      tags: [always]
 
   roles:
     - role: base

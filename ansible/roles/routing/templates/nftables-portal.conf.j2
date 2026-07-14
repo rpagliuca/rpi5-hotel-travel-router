@@ -1,10 +1,11 @@
 #!/usr/sbin/nft -f
 # ═══════════════════════════════════════════════════════════════════════════
-# MODO SEGURO (padrão). Carregado no boot pelo nftables.service.
-# Clientes do AP saem SOMENTE via Tailscale: uap0 → tailscale0 → exit node
-# ({{ tailscale_exit_node }}) → internet. Se o Tailscale cair, os clientes
-# ficam sem internet DE PROPÓSITO (Wi-Fi de hotel é não-confiável).
-# Alterna para o modo portal com: `travel-router portal`
+# MODO PORTAL (temporário). Aplicado por: `travel-router portal`
+# Clientes do AP saem DIRETO pela {{ uplink_interface }} (SEM Tailscale), para
+# você conseguir abrir/completar o captive portal do hotel no navegador normal
+# do seu laptop/celular.
+# ⚠️  INSEGURO: enquanto neste modo, o tráfego passa em claro pela rede do hotel.
+# Volte para o modo seguro assim que logar: `travel-router secure`
 # ═══════════════════════════════════════════════════════════════════════════
 
 flush ruleset
@@ -13,26 +14,18 @@ table inet filter {
     chain input {
         type filter hook input priority filter; policy drop;
 
-        # Allow established/related
         ct state established,related accept
-
-        # Allow loopback
         iifname "lo" accept
 
-        # SSH: clientes do AP, uplink, ethernet E via Tailscale (gestão remota)
+        # SSH: clientes do AP, uplink, ethernet e Tailscale
         iifname { "{{ ap_interface }}", "{{ uplink_interface }}", "{{ eth_interface }}", "tailscale0" } tcp dport 22 accept
-
-        # Tailscale: porta de conexões diretas (senão cai só em DERP/relay)
         udp dport 41641 accept
 
-        # Allow DHCP from AP clients
+        # DHCP/DNS dos clientes do AP
         iifname "{{ ap_interface }}" udp dport 67 accept
-
-        # Allow DNS from AP clients
         iifname "{{ ap_interface }}" tcp dport 53 accept
         iifname "{{ ap_interface }}" udp dport 53 accept
 
-        # Allow ICMP
         ip protocol icmp accept
         ip6 nexthdr icmpv6 accept
     }
@@ -40,10 +33,8 @@ table inet filter {
     chain forward {
         type filter hook forward priority filter; policy drop;
 
-        # Allow forwarding from AP clients through tailscale
-        iifname "{{ ap_interface }}" oifname "tailscale0" accept
-
-        # Allow established/related in reverse direction
+        # Encaminha clientes do AP DIRETO pelo uplink (para o captive portal)
+        iifname "{{ ap_interface }}" oifname "{{ uplink_interface }}" accept
         ct state established,related accept
     }
 
@@ -56,7 +47,7 @@ table ip nat {
     chain postrouting {
         type nat hook postrouting priority srcnat; policy accept;
 
-        # MASQUERADE AP client traffic going out via Tailscale exit node
-        iifname "{{ ap_interface }}" oifname "tailscale0" masquerade
+        # MASQUERADE dos clientes do AP saindo direto pelo uplink
+        iifname "{{ ap_interface }}" oifname "{{ uplink_interface }}" masquerade
     }
 }

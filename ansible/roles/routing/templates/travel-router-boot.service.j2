@@ -1,0 +1,13 @@
+[Unit]
+Description=Aplica o modo padrao do travel-router no boot ({{ travel_router_boot_mode }})
+After=tailscaled.service tailscale-up.service nftables.service network-online.target
+Wants=network-online.target
+# Best-effort: nunca deve impedir o boot nem afetar o AP
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/travel-router {{ travel_router_boot_mode }}
+SuccessExitStatus=0 1
+
+[Install]
+WantedBy=multi-user.target

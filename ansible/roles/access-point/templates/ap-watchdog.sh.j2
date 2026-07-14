@@ -1,0 +1,41 @@
+#!/bin/bash
+# Watchdog do AP privado — a fundação que nunca pode cair.
+# Verifica os 4 pilares do AP e repara o que estiver quebrado. Best-effort,
+# idempotente, roda a cada minuto (via timer). NÃO mexe em uplink/tailscale.
+set -u
+
+AP="{{ ap_interface }}"
+AP_IP="{{ ap_ip }}"
+UPLINK="{{ uplink_interface }}"
+changed=0
+
+# 1) A interface do AP existe?
+if ! ip link show "$AP" >/dev/null 2>&1; then
+  logger -t ap-watchdog "$AP ausente; recriando (uap0-create)"
+  systemctl start uap0-create.service || true
+  changed=1
+fi
+
+# 2) O AP tem o IP estático?
+if ! ip -4 addr show "$AP" 2>/dev/null | grep -q "${AP_IP}/"; then
+  logger -t ap-watchdog "$AP sem IP $AP_IP; recarregando systemd-networkd"
+  systemctl restart systemd-networkd || true
+  changed=1
+fi
+
+# 3) hostapd (o AP em si) está ativo?
+if ! systemctl is-active --quiet hostapd; then
+  logger -t ap-watchdog "hostapd inativo; reiniciando"
+  systemctl restart hostapd || true
+  changed=1
+fi
+
+# 4) dnsmasq (DHCP/DNS dos clientes) está ativo?
+if ! systemctl is-active --quiet dnsmasq; then
+  logger -t ap-watchdog "dnsmasq inativo; reiniciando"
+  systemctl restart dnsmasq || true
+  changed=1
+fi
+
+[ "$changed" = "1" ] && logger -t ap-watchdog "reparos aplicados no AP"
+exit 0

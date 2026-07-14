@@ -1,8 +1,10 @@
-# Ansible vault password file
+# Config local com seus valores/segredos (NUNCA comitar). Use config.example.yml.
+ansible/config.yml
+config.yml
+
+# (legado) Ansible vault — não é mais usado, mas mantido ignorado por segurança
 .vault_pass
 *.vault_pass
-
-# Secret vars (real, not .dist)
 ansible/inventory/group_vars/all/vault.yml
 
 # SSH keys
