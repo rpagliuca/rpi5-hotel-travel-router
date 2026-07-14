@@ -1,0 +1,6 @@
+[Unit]
+Description=Deadman switch do travel-router (rollback se o heartbeat vencer)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/travel-router-deadman.sh

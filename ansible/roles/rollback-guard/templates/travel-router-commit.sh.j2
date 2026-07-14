@@ -1,0 +1,7 @@
+#!/bin/bash
+# Desarma o deadman: a config do travel-router passa a ser PERMANENTE.
+# Rode isto quando tiver certeza de que continua com acesso ao Pi.
+systemctl disable --now travel-router-deadman.timer 2>/dev/null
+rm -f /var/lib/travel-router/deadman-armed
+echo "Deadman DESARMADO — config do travel-router agora e permanente."
+echo "(reverter manualmente a qualquer momento: sudo travel-router-rollback)"

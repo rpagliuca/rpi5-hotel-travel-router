@@ -144,6 +144,39 @@ via `-e @config.yml` têm precedência sobre o `main.yml`).
 
 ---
 
+## Aplicar remotamente com segurança (deadman rollback) 🪂
+
+Aplicar esta config **via SSH remoto** é arriscado: os roles mexem na `wlan0` e
+sobem o AP no mesmo rádio — se algo falhar, você pode **perder o acesso** ao Pi.
+Para isso existe o **deadman switch** (role `rollback-guard`), opt-in:
+
+```bash
+ansible-playbook playbook.yml -e @config.yml -e deadman_rollback=true
+```
+
+Ao final, o Pi fica **armado**: se o heartbeat não for tocado dentro de
+`deadman_timeout_sec` (padrão 300s), ele **reverte ao estado base** (`wlan0` de
+volta ao NetworkManager, Tailscale sem exit node, sem AP/NAT) e reinicia.
+
+Fluxo:
+
+```bash
+# Enquanto valida, mantenha vivo a cada < 5 min (de outra máquina, via SSH):
+watch -n 60 ssh <user>@<pi> sudo travel-router-keepalive
+
+# Deu tudo certo e você continua com acesso? Torne permanente:
+ssh <user>@<pi> sudo travel-router-commit
+
+# Reverter manualmente a qualquer momento:
+ssh <user>@<pi> sudo travel-router-rollback
+```
+
+Se você **perder o acesso**, é só esperar ≤5 min: o Pi volta sozinho ao estado
+anterior. Os CLIs `travel-router-{keepalive,commit,rollback}` ficam sempre
+instalados; o deadman só fica *armado* quando `deadman_rollback=true`.
+
+---
+
 ## Changing hotels (per-trip)
 
 Só as credenciais do hotel mudam. Edite `config.yml` (`hotel_ssid`,
