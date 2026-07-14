@@ -1,0 +1,41 @@
+#!/bin/bash
+# Reverte TODA a config do travel-router e devolve o Pi ao estado base:
+#   - wlan0 volta ao NetworkManager (reconecta na rede conhecida, ex.: hotspot)
+#   - Tailscale segue autenticado, mas SEM exit node
+#   - sem AP proprio, sem nftables/NAT/tunelamento
+# Chamado pelo deadman (heartbeat vencido) ou manualmente:
+#   sudo travel-router-rollback
+set +e
+
+logger -t tr-rollback "ROLLBACK acionado — revertendo para o estado base"
+
+# 1) Desarma o deadman primeiro (evita loop de rollback)
+systemctl disable --now travel-router-deadman.timer 2>/dev/null
+rm -f /var/lib/travel-router/deadman-armed
+
+# 2) Para e desabilita os servicos do travel-router
+for u in hostapd dnsmasq "wpa_supplicant@{{ uplink_interface }}" uap0-create \
+         hostapd-channel-sync ap-watchdog.timer travel-router-boot tailscale-up \
+         systemd-networkd; do
+  systemctl disable --now "$u" 2>/dev/null
+done
+
+# 3) Firewall: limpa regras (sem NAT/tunelamento) e desabilita
+nft flush ruleset 2>/dev/null
+systemctl disable --now nftables 2>/dev/null
+
+# 4) Remove a interface de AP virtual
+ip link del {{ ap_interface }} 2>/dev/null
+
+# 5) Devolve o {{ uplink_interface }} ao NetworkManager
+rm -f /etc/NetworkManager/conf.d/99-travel-router-unmanaged.conf
+systemctl restart NetworkManager 2>/dev/null
+
+# 6) Tailscale volta ao normal (sem exit node); segue conectado
+tailscale set --exit-node= 2>/dev/null
+
+# 7) Reboot limpo -> NM reconecta na rede conhecida e o Tailscale sobe
+logger -t tr-rollback "revertido; reiniciando em 3s"
+sync
+sleep 3
+systemctl reboot

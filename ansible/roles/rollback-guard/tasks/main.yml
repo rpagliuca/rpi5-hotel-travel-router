@@ -1,0 +1,92 @@
+---
+# Rede de seguranca para aplicar a config remotamente sem risco de perder o Pi:
+# um "deadman switch" que reverte ao estado base se o heartbeat nao for tocado.
+# Opt-in via deadman_rollback (default false). Os CLIs de rollback ficam sempre
+# instalados (rollback manual util mesmo sem o deadman armado).
+
+- name: Diretorio de estado do travel-router
+  file:
+    path: /var/lib/travel-router
+    state: directory
+    mode: "0755"
+
+- name: Deploy scripts (rollback, deadman, keepalive, commit)
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: "0755"
+    owner: root
+    group: root
+  loop:
+    - { src: travel-router-rollback.sh.j2,  dest: /usr/local/sbin/travel-router-rollback.sh }
+    - { src: travel-router-deadman.sh.j2,   dest: /usr/local/sbin/travel-router-deadman.sh }
+    - { src: travel-router-keepalive.sh.j2, dest: /usr/local/sbin/travel-router-keepalive.sh }
+    - { src: travel-router-commit.sh.j2,    dest: /usr/local/sbin/travel-router-commit.sh }
+
+- name: Atalhos de comando em /usr/local/bin
+  file:
+    src: "/usr/local/sbin/{{ item }}.sh"
+    dest: "/usr/local/bin/{{ item }}"
+    state: link
+    force: true
+  loop:
+    - travel-router-rollback
+    - travel-router-keepalive
+    - travel-router-commit
+
+- name: Deploy deadman service + timer
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: "0644"
+  loop:
+    - { src: travel-router-deadman.service.j2, dest: /etc/systemd/system/travel-router-deadman.service }
+    - { src: travel-router-deadman.timer.j2,   dest: /etc/systemd/system/travel-router-deadman.timer }
+  notify: Reload systemd
+
+- name: Aplicar reload do systemd agora (para armar/desarmar em seguida)
+  systemd:
+    daemon_reload: true
+
+# ── ARMAR (quando deadman_rollback=true) ──────────────────────────────────────
+- name: Inicializar heartbeat e armar o deadman
+  when: deadman_rollback | default(false)
+  block:
+    - name: Tocar heartbeat inicial
+      command: /usr/local/sbin/travel-router-keepalive.sh
+      changed_when: false
+
+    - name: Marcar deadman como armado
+      file:
+        path: /var/lib/travel-router/deadman-armed
+        state: touch
+        mode: "0644"
+
+    - name: Habilitar e iniciar o timer do deadman
+      systemd:
+        name: travel-router-deadman.timer
+        enabled: true
+        state: started
+
+    - name: Aviso sobre o deadman armado
+      debug:
+        msg: >-
+          DEADMAN ARMADO ({{ deadman_timeout_sec | default(300) }}s). Toque o
+          heartbeat (`sudo travel-router-keepalive`) a cada < 5 min ou o Pi
+          reverte ao estado base. Confirme com `sudo travel-router-commit`.
+
+# ── DESARMAR (quando deadman_rollback=false) ──────────────────────────────────
+- name: Garantir deadman desarmado quando nao solicitado
+  when: not (deadman_rollback | default(false))
+  block:
+    - name: Parar/desabilitar o timer do deadman
+      systemd:
+        name: travel-router-deadman.timer
+        enabled: false
+        state: stopped
+      failed_when: false
+
+    - name: Remover flag de armado
+      file:
+        path: /var/lib/travel-router/deadman-armed
+        state: absent

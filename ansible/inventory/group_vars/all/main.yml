@@ -29,5 +29,14 @@ tailscale_exit_node_allow_lan_access: true
 # Alterna em runtime: `travel-router portal` / `travel-router secure`.
 travel_router_boot_mode: "secure"
 
+# ── Rollback / deadman switch ─────────────────────────────────────────────────
+# Rede de seguranca ao aplicar remotamente: se true, ao final do playbook o Pi
+# fica "armado" e reverte ao estado base (wlan0 no NetworkManager, sem AP/NAT,
+# Tailscale sem exit node) caso o heartbeat nao seja tocado dentro do prazo.
+# Mantenha vivo com `sudo travel-router-keepalive` e confirme com
+# `sudo travel-router-commit`. Ative via `-e deadman_rollback=true`.
+deadman_rollback: false
+deadman_timeout_sec: 300    # 5 min sem heartbeat -> rollback
+
 # ── Sistema ─────────────────────────────────────────────────────────────────────
 timezone: "UTC"             # override em config.yml

@@ -1,0 +1,25 @@
+#!/bin/bash
+# Deadman switch: se o heartbeat nao for tocado dentro do prazo, aciona o
+# rollback. Rodado a cada 60s pelo travel-router-deadman.timer.
+set -u
+
+ARMED=/var/lib/travel-router/deadman-armed
+HB=/var/lib/travel-router/heartbeat
+MAX={{ deadman_timeout_sec | default(300) }}
+
+# So age se estiver armado (apos travel-router-commit, o arquivo some)
+[ -f "$ARMED" ] || exit 0
+
+now=$(date +%s)
+if [ -f "$HB" ]; then
+  mtime=$(stat -c %Y "$HB")
+else
+  mtime=0
+fi
+age=$(( now - mtime ))
+
+if [ "$age" -gt "$MAX" ]; then
+  logger -t tr-deadman "heartbeat vencido (${age}s > ${MAX}s) — acionando ROLLBACK"
+  /usr/local/sbin/travel-router-rollback.sh
+fi
+exit 0

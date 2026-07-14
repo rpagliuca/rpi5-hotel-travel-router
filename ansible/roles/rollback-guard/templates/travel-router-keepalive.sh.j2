@@ -1,0 +1,5 @@
+#!/bin/bash
+# Mantem o deadman vivo: toca o heartbeat. Rode a cada < {{ deadman_timeout_sec | default(300) }}s
+# enquanto valida a config; se parar de tocar, o Pi reverte ao estado base.
+install -d -m 0755 /var/lib/travel-router
+touch /var/lib/travel-router/heartbeat
