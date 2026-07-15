@@ -44,11 +44,12 @@
     mode: "0600"
   notify: Restart wpa_supplicant
 
+# So habilita aqui; o start acontece no cutover deterministico do final da
+# role (iniciar agora, com a wlan0 ainda no NM, deixa o daemon capenga).
 - name: Enable wpa_supplicant for wlan0
   systemd:
     name: "wpa_supplicant@{{ uplink_interface }}"
     enabled: true
-    state: started
 
 # Systemd service to create the virtual AP interface (uap0) over wlan0
 - name: Deploy uap0-create systemd service
@@ -84,3 +85,38 @@
     name: systemd-networkd
     enabled: true
     state: started
+
+# ── Cutover deterministico do uplink ──────────────────────────────────────────
+# NAO depender de handlers condicionados a "changed": apos um rollback os
+# configs podem estar identicos e nenhum handler dispara — a wlan0 fica no
+# limbo (NM solta no reload final, wpa_supplicant morto do start precoce) e o
+# Pi cai offline ate o deadman agir (incidente 2026-07-14). A sequencia abaixo
+# reproduz o cutover manual que funciona: soltar a wlan0 do NM em runtime,
+# restart LIMPO do wpa_supplicant e do networkd, e um checkpoint que so deixa
+# o play continuar com o uplink de pe.
+
+- name: Aplicar handlers pendentes agora (Reload NM etc.)
+  meta: flush_handlers
+
+- name: Garantir wlan0 fora do NM em runtime
+  command: nmcli device set {{ uplink_interface }} managed no
+  changed_when: false
+  failed_when: false
+
+- name: Restart limpo do wpa_supplicant do uplink
+  systemd:
+    name: "wpa_supplicant@{{ uplink_interface }}"
+    state: restarted
+
+- name: Restart do systemd-networkd
+  systemd:
+    name: systemd-networkd
+    state: restarted
+
+- name: Checkpoint - aguardar o uplink obter IPv4 (ate 90s)
+  command: ip -4 -br addr show {{ uplink_interface }}
+  register: tr_uplink_ip
+  until: tr_uplink_ip.stdout is search('\d+\.\d+\.\d+\.\d+')
+  retries: 30
+  delay: 3
+  changed_when: false
