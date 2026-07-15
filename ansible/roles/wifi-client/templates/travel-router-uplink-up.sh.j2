@@ -93,7 +93,22 @@ else
 fi
 if [ "$ch" -gt 14 ] 2>/dev/null; then hw="a"; else hw="g"; fi
 
+# ── (re)cria o uap0 AGORA que a STA está estável ──────────────────────────────
+# Subir/reiniciar a STA no rádio único DESTRÓI o vif __ap (uap0). Criá-lo antes
+# da STA (como faz o uap0-create no boot) não basta: a subida da STA o apaga e o
+# hostapd acha "No such device". Recriamos aqui, depois da STA, antes do AP —
+# direto com iw (não via systemctl, para não mexer no ordering do boot).
+AP="{{ ap_interface }}"
+ip link del "$AP" 2>/dev/null || true
+if iw dev "$UPLINK" interface add "$AP" type __ap 2>/dev/null; then
+  ip link set "$AP" address 02:00:00:00:00:01 2>/dev/null || true
+  ip link set "$AP" up 2>/dev/null || true
+  logger -t tr-uplink "uap0 recriado apos a STA subir"
+else
+  logger -t tr-uplink "ERRO: falha ao criar uap0"
+fi
+
 # ── escreve canal+hw_mode no hostapd.conf (hostapd sobe DEPOIS, no canal certo) ──
 sed -i "s/^channel=.*/channel=$ch/; s/^hw_mode=.*/hw_mode=$hw/" "$HOSTAPD_CONF"
-logger -t tr-uplink "hostapd.conf ajustado: channel=$ch hw_mode=$hw"
+logger -t tr-uplink "hostapd.conf ajustado: channel=$ch hw_mode=$hw; uap0 pronto"
 exit 0
