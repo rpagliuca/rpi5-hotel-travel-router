@@ -14,6 +14,7 @@ AP_IF   = "{{ ap_interface }}"
 AP_IP   = "{{ ap_ip }}"
 COUNTRY = "{{ wifi_country | default('BR') }}"
 WPA_CONF = "/etc/wpa_supplicant/wpa_supplicant-%s.conf" % UPLINK
+NM_FALLBACK = "/etc/NetworkManager/system-connections/uplink-fallback.nmconnection"
 # AP-sempre-de-pé com PREFERÊNCIA por 2.4GHz (nao restricao): dois blocos de
 # rede, prioridade alta em 2.4 (canais 1-13) e fallback em 5GHz apenas nos
 # canais nao-DFS (o AP consegue seguir). Ver uplink_prefer_24ghz no main.yml.
@@ -182,6 +183,23 @@ def api_uplink():
         os.chmod(WPA_CONF, 0o600)
     except OSError as e:
         return jsonify(ok=False, error="Falha ao gravar conf: %s" % e), 500
+
+    # o rollback deve voltar para a rede ATUAL: reescreve tambem o perfil NM
+    # de fallback (dormente enquanto a wlan0 esta fora do NM). Best-effort.
+    nm = ["[connection]", "id=uplink-fallback", "type=wifi",
+          "interface-name=%s" % UPLINK, "autoconnect=true",
+          "autoconnect-priority=50", "", "[wifi]", "mode=infrastructure",
+          "ssid=%s" % ssid]
+    if not is_open:
+        nm += ["", "[wifi-security]", "key-mgmt=wpa-psk", "psk=%s" % password]
+    nm += ["", "[ipv4]", "method=auto", "", "[ipv6]", "method=auto", ""]
+    try:
+        with open(NM_FALLBACK, "w") as f:
+            f.write("\n".join(nm))
+        os.chmod(NM_FALLBACK, 0o600)
+        run(["nmcli", "connection", "reload"])
+    except OSError:
+        pass  # nao bloqueia a troca de uplink
 
     # recarrega o wpa_supplicant sem derrubar o serviço
     run(["wpa_cli", "-i", UPLINK, "reconfigure"])

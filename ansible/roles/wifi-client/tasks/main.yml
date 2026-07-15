@@ -8,6 +8,8 @@
 # credenciais do uplink. Dormente enquanto a wlan0 esta unmanaged; no rollback
 # o NM reassume a wlan0 e reconecta por ele. Sem isso, um rollback pode devolver
 # a wlan0 a um NM sem credencial nenhuma -> Pi orfao (incidente 2026-07-14).
+# BOOTSTRAP-ONLY (force: uplink_reset): o webapp e a fonte da verdade do uplink
+# e reescreve este perfil ao trocar de rede; o apply nao sobrepoe a escolha.
 - name: Deploy perfil NM de fallback do uplink
   template:
     src: uplink-fallback.nmconnection.j2
@@ -15,6 +17,7 @@
     mode: "0600"
     owner: root
     group: root
+    force: "{{ uplink_reset | default(false) | bool }}"
   notify: Reload NetworkManager
 
 # Raspberry Pi OS Bookworm manages interfaces with NetworkManager by default.
@@ -36,12 +39,17 @@
     enabled: false
   failed_when: false
 
-# wpa_supplicant config for hotel WiFi uplink
+# wpa_supplicant config do uplink — BOOTSTRAP-ONLY (force: uplink_reset).
+# hotel_ssid/hotel_password do config.yml valem so na primeira provisao; depois
+# a escolha feita no webapp persiste atraves de applies (nunca mais "voltar
+# pro hotspot do iphone" sem querer). Para resetar pelo config.yml:
+#   ansible-playbook ... -e uplink_reset=true
 - name: Deploy wpa_supplicant config for wlan0
   template:
     src: wpa_supplicant-wlan0.conf.j2
     dest: /etc/wpa_supplicant/wpa_supplicant-{{ uplink_interface }}.conf
     mode: "0600"
+    force: "{{ uplink_reset | default(false) | bool }}"
   notify: Restart wpa_supplicant
 
 # So habilita aqui; o start acontece no cutover deterministico do final da

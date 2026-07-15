@@ -152,8 +152,8 @@ via `-e @config.yml` têm precedência sobre o `main.yml`).
 | Variável (config.yml) | Exemplo | Descrição |
 |-----------------------|---------|-------------|
 | `ap_ssid` / `ap_password` | `TravelRouter` / *forte* | Seu AP privado e a senha (só você sabe) |
-| `hotel_ssid` | `GTvisitor` | Wi-Fi do hotel (muda por viagem) |
-| `hotel_open` / `hotel_password` | `true` / `""` | Rede aberta (ex.: GTvisitor) ou com senha |
+| `hotel_ssid` | `GTvisitor` | Wi-Fi do hotel — **só bootstrap** (1ª provisão); depois troque pelo webapp |
+| `hotel_open` / `hotel_password` | `true` / `""` | Rede aberta (ex.: GTvisitor) ou com senha — só bootstrap |
 | `tailscale_authkey` | `tskey-auth-…` | Auth key da sua tailnet |
 | `tailscale_exit_node` | *nome exato* | Nó usado como exit (nome de `tailscale status` ou IP) |
 | `travel_router_boot_mode` | `secure` | Modo no boot (`secure`/`portal`) — opcional |
@@ -201,15 +201,16 @@ instalados; o deadman só fica *armado* quando `deadman_rollback=true`.
 
 ## Changing hotels (per-trip)
 
-Só as credenciais do hotel mudam. Edite `config.yml` (`hotel_ssid`,
-`hotel_open`/`hotel_password`) e rode só a tag `wifi-client`:
+**Use o web app** (http://192.168.88.1 conectado no seu AP): escaneie, escolha a
+rede, aberta/senha, aplicar. A escolha **persiste através de applies do ansible**
+(o webapp também atualiza o perfil de fallback usado pelo rollback) — os
+`hotel_*` do `config.yml` valem só na primeira provisão.
+
+Para forçar o reset do uplink pelo `config.yml` (raro):
 
 ```bash
-$EDITOR config.yml
-ansible-playbook playbook.yml -e @config.yml --tags wifi-client
+ansible-playbook playbook.yml -e @config.yml --tags wifi-client -e uplink_reset=true
 ```
-
-Ou, sem ansible, direto no Pi via o web app do AP (roadmap) / `travel-router`.
 
 ---
 

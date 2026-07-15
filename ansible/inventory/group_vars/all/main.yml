@@ -24,6 +24,10 @@ eth_interface: "eth0"       # uplink ethernet alternativo
 # junto. Canais DFS (52-144) nunca são usados: o AP não conseguiria segui-los.
 # false = um bloco único sem freq_list (sem garantias de canal).
 uplink_prefer_24ghz: true
+# hotel_ssid/hotel_password sao BOOTSTRAP: valem so na primeira provisao.
+# Depois, o webapp e a fonte da verdade do uplink e a escolha persiste
+# atraves de applies. true = forca o reset pelo config.yml neste apply.
+uplink_reset: false
 
 # ── Tailscale ─────────────────────────────────────────────────────────────────
 tailscale_hostname: "rpi5-travel-router"
