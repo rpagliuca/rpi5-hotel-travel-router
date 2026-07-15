@@ -18,6 +18,12 @@ ap_hw_mode: "g"             # "g" = 2.4GHz; "a" para 5GHz se o rádio suportar
 uplink_interface: "wlan0"   # rádio onboard; compartilha canal com o uap0
 hotel_open: false           # override em config.yml (true p/ redes abertas)
 eth_interface: "eth0"       # uplink ethernet alternativo
+# AP-sempre-de-pé: PREFERE 2.4GHz no uplink (canais 1-13, onde o AP segue
+# qualquer canal), com fallback em 5GHz APENAS nos canais não-DFS (36-48,
+# 149-165), onde o hostapd pode operar — o channel-sync troca a banda do AP
+# junto. Canais DFS (52-144) nunca são usados: o AP não conseguiria segui-los.
+# false = um bloco único sem freq_list (sem garantias de canal).
+uplink_prefer_24ghz: true
 
 # ── Tailscale ─────────────────────────────────────────────────────────────────
 tailscale_hostname: "rpi5-travel-router"
