@@ -49,8 +49,9 @@
     daemon_reload: true
 
 # ── ARMAR (quando deadman_rollback=true) ──────────────────────────────────────
+# `| bool` para aceitar tanto -e deadman_rollback=true (string) quanto JSON.
 - name: Inicializar heartbeat e armar o deadman
-  when: deadman_rollback | default(false)
+  when: deadman_rollback | default(false) | bool
   block:
     - name: Tocar heartbeat inicial
       command: /usr/local/sbin/travel-router-keepalive.sh
@@ -77,7 +78,7 @@
 
 # ── DESARMAR (quando deadman_rollback=false) ──────────────────────────────────
 - name: Garantir deadman desarmado quando nao solicitado
-  when: not (deadman_rollback | default(false))
+  when: not (deadman_rollback | default(false) | bool)
   block:
     - name: Parar/desabilitar o timer do deadman
       systemd:
