@@ -4,6 +4,19 @@
   command: rfkill unblock wifi
   changed_when: false
 
+# Rede de seguranca ANTES de tirar a wlan0 do NM: um perfil de fallback com as
+# credenciais do uplink. Dormente enquanto a wlan0 esta unmanaged; no rollback
+# o NM reassume a wlan0 e reconecta por ele. Sem isso, um rollback pode devolver
+# a wlan0 a um NM sem credencial nenhuma -> Pi orfao (incidente 2026-07-14).
+- name: Deploy perfil NM de fallback do uplink
+  template:
+    src: uplink-fallback.nmconnection.j2
+    dest: /etc/NetworkManager/system-connections/uplink-fallback.nmconnection
+    mode: "0600"
+    owner: root
+    group: root
+  notify: Reload NetworkManager
+
 # Raspberry Pi OS Bookworm manages interfaces with NetworkManager by default.
 # Keep it away from the radio; eth0 stays under NM (works as ethernet uplink
 # out of the box — Tailscale rides over whichever uplink is active).
