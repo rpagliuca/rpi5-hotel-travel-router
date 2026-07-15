@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RPi5 Hotel Travel Router — Documentação</title>
+<meta name="description" content="Raspberry Pi 5 como roteador de viagem: Wi-Fi do hotel → AP privado → exit node Tailscale. Uso, arquitetura e aprendizados.">
+<style>
+:root{
+  --bg:#fbfbfd; --fg:#1a1a1e; --muted:#5b5b66; --card:#fff; --border:#e6e6ec;
+  --accent:#2d6cdf; --accent-soft:#eaf1fd; --code-bg:#f4f4f8; --code-fg:#24243a;
+  --warn-bg:#fff5e6; --warn-bd:#f0c674; --ok-bg:#e9f8ee; --ok-bd:#8fd6a6;
+  --key-bg:#f3ecff; --key-bd:#c9adff;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f1115; --fg:#e7e7ee; --muted:#9a9aa8; --card:#171922; --border:#262a36;
+  --accent:#6aa1ff; --accent-soft:#182339; --code-bg:#12141b; --code-fg:#cdd3e6;
+  --warn-bg:#2a2313; --warn-bd:#6b5a2a; --ok-bg:#132a1c; --ok-bd:#2f6b45;
+  --key-bg:#1e1830; --key-bd:#4b3a78;
+}}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:220px 1fr;gap:40px}
+header.top{border-bottom:1px solid var(--border);background:var(--card)}
+header.top .inner{max-width:1080px;margin:0 auto;padding:28px 20px}
+header.top h1{margin:0;font-size:1.5rem;letter-spacing:-.02em}
+header.top p{margin:6px 0 0;color:var(--muted)}
+.badges{margin-top:14px;display:flex;flex-wrap:wrap;gap:8px}
+.badges a,.badges span{font-size:.8rem;padding:3px 10px;border-radius:999px;border:1px solid var(--border);
+  color:var(--muted);text-decoration:none;background:var(--bg)}
+.badges a:hover{border-color:var(--accent);color:var(--accent)}
+nav{position:sticky;top:20px;align-self:start;font-size:.9rem;padding-top:36px}
+nav a{display:block;color:var(--muted);text-decoration:none;padding:4px 0;border-left:2px solid transparent;padding-left:12px;margin-left:-2px}
+nav a:hover{color:var(--fg)}
+nav a.h3{padding-left:24px;font-size:.85rem}
+main{padding:36px 0 80px;min-width:0}
+section{scroll-margin-top:20px}
+h2{font-size:1.3rem;letter-spacing:-.01em;margin:2.4em 0 .6em;padding-top:.4em}
+main>section:first-child h2{margin-top:.2em}
+h3{font-size:1.05rem;margin:1.6em 0 .4em}
+p,li{color:var(--fg)}
+.muted{color:var(--muted)}
+a{color:var(--accent)}
+code{background:var(--code-bg);color:var(--code-fg);padding:.12em .4em;border-radius:5px;font-size:.88em;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code-bg);color:var(--code-fg);padding:16px;border-radius:10px;overflow-x:auto;
+  border:1px solid var(--border);font-size:.85rem;line-height:1.5}
+pre code{background:none;padding:0}
+.diagram{white-space:pre;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:.82rem;line-height:1.45;color:var(--fg)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:2px 18px;margin:16px 0}
+.callout{border-radius:10px;padding:12px 16px;margin:16px 0;border:1px solid var(--border);background:var(--card)}
+.callout.key{background:var(--key-bg);border-color:var(--key-bd)}
+.callout.warn{background:var(--warn-bg);border-color:var(--warn-bd)}
+.callout.ok{background:var(--ok-bg);border-color:var(--ok-bd)}
+.callout p{margin:.4em 0}
+.callout .lbl{font-weight:700;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em}
+table{border-collapse:collapse;width:100%;margin:16px 0;font-size:.92rem;display:block;overflow-x:auto}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+th{color:var(--muted);font-weight:600;font-size:.85rem}
+ul{padding-left:1.2em}
+li{margin:.25em 0}
+kbd{background:var(--code-bg);border:1px solid var(--border);border-radius:5px;padding:1px 6px;font-size:.85em}
+hr{border:none;border-top:1px solid var(--border);margin:2.4em 0}
+footer{color:var(--muted);font-size:.85rem;border-top:1px solid var(--border);padding:24px 0}
+@media(max-width:820px){
+  .wrap{grid-template-columns:1fr;gap:0}
+  nav{display:none}
+  main{padding:24px 0 60px}
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="inner">
+    <h1>🧳 RPi5 Hotel Travel Router</h1>
+    <p>Um Raspberry Pi 5 que conecta no Wi-Fi do hotel, cria seu Wi-Fi privado e roteia tudo por um <b>exit node Tailscale</b>. Configurável por um web app, sem SSH.</p>
+    <div class="badges">
+      <a href="https://github.com/rpagliuca/rpi5-hotel-travel-router">GitHub ↗</a>
+      <span>Ansible + InSpec</span>
+      <span>Raspberry Pi OS 64-bit</span>
+      <span>Rádio único (AP + cliente)</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav>
+    <a href="#oquee">O que é</a>
+    <a href="#arquitetura">Arquitetura</a>
+    <a href="#fundacao">O AP nunca cai</a>
+    <a href="#modos">Modos: secure / portal</a>
+    <a href="#instalar">Instalação</a>
+    <a href="#webapp">Web app</a>
+    <a href="#redes" class="h3">Trocar de rede</a>
+    <a href="#banda" class="h3">Banda & scan</a>
+    <a href="#deadman">Rede de segurança</a>
+    <a href="#aprendizados">Aprendizados</a>
+    <a href="#troubleshooting">Troubleshooting</a>
+  </nav>
+
+  <main>
+    <section id="oquee">
+      <h2>O que é</h2>
+      <p>Você chega num hotel com Wi-Fi público e não-confiável. Em vez de conectar seus aparelhos direto nele, você liga o Pi: ele entra no Wi-Fi do hotel como cliente e <b>cria seu próprio Wi-Fi privado</b>. Seus dispositivos conectam nesse AP privado, e todo o tráfego sai criptografado por um <b>exit node da sua Tailscale</b> — como se você estivesse em casa.</p>
+      <div class="diagram card">
+[ Wi-Fi do hotel ]
+      ↑  wlan0  (cliente / "STA" — uplink)
+[ Raspberry Pi 5 ]   ← rádio único: AP e cliente no mesmo canal
+      ↓  uap0   (AP privado — 192.168.88.1)
+[ laptop ] [ celular ]  →  tailscale0  →  exit node  →  internet
+      </div>
+      <p class="muted">Toda a configuração fica em <code>config.yml</code> (para o Ansible) e no <code>uplink.conf</code> do Pi (editado pelo web app). Nada pessoal vai para o repositório público.</p>
+    </section>
+
+    <section id="arquitetura">
+      <h2>Arquitetura</h2>
+      <p>O Pi 5 tem <b>um único rádio Wi-Fi</b>. Ele faz dois papéis ao mesmo tempo, no <b>mesmo canal</b> (limitação física do modo concorrente):</p>
+      <ul>
+        <li><b>STA / uplink</b> (<code>wlan0</code>, wpa_supplicant): cliente do Wi-Fi do hotel.</li>
+        <li><b>AP</b> (<code>uap0</code>, hostapd): a interface virtual do seu Wi-Fi privado, criada sobre a <code>wlan0</code>.</li>
+      </ul>
+      <table>
+        <tr><th>Componente</th><th>Papel</th></tr>
+        <tr><td><code>wpa_supplicant</code></td><td>Conecta a <code>wlan0</code> ao Wi-Fi do hotel</td></tr>
+        <tr><td><code>hostapd</code></td><td>Serve o AP privado na <code>uap0</code></td></tr>
+        <tr><td><code>dnsmasq</code></td><td>DHCP + DNS para os clientes do AP (192.168.88.0/24)</td></tr>
+        <tr><td><code>nftables</code></td><td>NAT/masquerade: clientes do AP → <code>tailscale0</code> (ou → <code>wlan0</code> no modo portal)</td></tr>
+        <tr><td><code>tailscale</code></td><td>Entra na tailnet e usa o exit node para o tráfego roteado</td></tr>
+        <tr><td>web app (Flask)</td><td>Configuração em <code>http://192.168.88.1</code>, só na interface do AP</td></tr>
+      </ul>
+    </section>
+
+    <section id="fundacao">
+      <h2>Fundação: o AP privado nunca cai 🛡️</h2>
+      <p>A prioridade nº 1 é <b>nunca perder acesso ao Pi</b>. O AP privado é a âncora de segurança — é por ele que você entra no web app para consertar qualquer coisa.</p>
+      <ul>
+        <li><b>Sempre sobe.</b> No boot, o orquestrador tenta o uplink por ~40s e lê o canal dele; <b>associando ou não</b>, o hostapd sobe em seguida (no canal do uplink, ou no canal default se o uplink falhar). Wi-Fi do hotel fora de alcance/senha errada? O AP sobe assim mesmo.</li>
+        <li><b>Auto-recupera.</b> <code>hostapd</code> com <code>Restart=always</code> e um watchdog a cada 60s que repara <code>uap0</code>, IP, hostapd e dnsmasq.</li>
+        <li><b>Senha pessoal.</b> WPA2 com a sua senha — só você entra. SSH pela sub-rede do AP é sempre liberado.</li>
+      </ul>
+      <div class="callout ok">
+        <p class="lbl">A garantia</p>
+        <p>O início do AP <b>não depende</b> do sucesso do uplink nem do Tailscale. Se algo falhar, o AP continua no ar — e o web app com ele.</p>
+      </div>
+    </section>
+
+    <section id="modos">
+      <h2>Modos: <code>secure</code> ↔ <code>portal</code></h2>
+      <p>Redes de hotel exigem login (captive portal) e são não-confiáveis. Daí dois modos, alternáveis pelo web app ou via CLI:</p>
+      <table>
+        <tr><th>Modo</th><th>Saída dos clientes</th><th>Quando usar</th></tr>
+        <tr><td><code>secure</code></td><td>Só via Tailscale (exit node)</td><td>Uso normal — tudo criptografado</td></tr>
+        <tr><td><code>portal</code></td><td>Direto pela <code>wlan0</code></td><td>Passar pelo login do hotel</td></tr>
+      </table>
+      <pre><code>sudo travel-router portal   # abrir o login do hotel no navegador
+sudo travel-router secure   # voltar ao uso normal
+sudo travel-router status   # modo, uplink, internet, tailscale</code></pre>
+    </section>
+
+    <section id="instalar">
+      <h2>Instalação</h2>
+      <p>Requisitos: Pi 5 com Raspberry Pi OS <b>Bookworm ou Trixie (64-bit)</b>, sua chave SSH no Pi, e um <b>exit node Tailscale</b> já rodando na sua tailnet.</p>
+      <pre><code>git clone https://github.com/rpagliuca/rpi5-hotel-travel-router
+cd rpi5-hotel-travel-router/ansible
+cp config.example.yml config.yml   # gitignored — segredos só aqui
+$EDITOR config.yml                 # SSIDs, senha do AP, authkey, exit node
+ansible-playbook playbook.yml -e @config.yml</code></pre>
+      <div class="callout warn">
+        <p class="lbl">Aplicando remotamente? Use o deadman</p>
+        <p>Os roles mexem na <code>wlan0</code> e sobem o AP no mesmo rádio — se algo falhar você pode perder o acesso. Rode com <code>-e deadman_rollback=true</code> (veja <a href="#deadman">Rede de segurança</a>).</p>
+      </div>
+      <p class="muted">Todos os valores do seu ambiente ficam em <code>config.yml</code> (gitignored). Sem vault: como o arquivo nunca é comitado, os segredos jamais vão para o repositório — que é público e reaproveitável.</p>
+    </section>
+
+    <section id="webapp">
+      <h2>Web app — <code>http://192.168.88.1</code></h2>
+      <p>Conectado no seu AP privado, abra <code>http://192.168.88.1</code> (⚠ <b>http</b>, não https) no navegador. Sem terminal, você:</p>
+      <ul>
+        <li>Vê o <b>status</b>: uplink, internet, Tailscale + exit node, dispositivos no AP (auto-refresh).</li>
+        <li><b>Escolhe o Wi-Fi</b> do hotel: escaneia, seleciona, aberta ou com senha.</li>
+        <li>Troca a <b>banda</b> (2.4 / 5 / auto) e o <b>modo</b> (secure / portal).</li>
+        <li><b>Manutenção</b>: reiniciar ou fazer rollback.</li>
+      </ul>
+
+      <h3 id="redes">Trocar de rede</h3>
+      <p>O modelo é <b>gravar e reiniciar</b>: sua escolha vai para o <code>uplink.conf</code> (a fonte da verdade) e o Pi reinicia para subir na rede nova. <b>Por quê reboot?</b> No rádio único, o AP precisa estar no canal do uplink — e isso só pode ser fixado no boot, antes do AP subir (veja <a href="#aprendizados">Aprendizados</a>). A escolha persiste; um novo <code>ansible-playbook</code> não a sobrescreve.</p>
+
+      <h3 id="banda">Banda &amp; scan</h3>
+      <div class="callout ok">
+        <p><b>Escanear não precisa de toggle.</b> O scan varre <b>todas as bandas</b> (2.4 e 5GHz) sempre — o toggle de banda só afeta a que o Pi vai <b>conectar</b>.</p>
+      </div>
+      <ul>
+        <li><b>Ver redes 5GHz:</b> é só escanear. (O rádio único sai do canal do AP por ~1s durante o scan — normal.)</li>
+        <li><b>Conectar numa rede 5GHz:</b> primeiro troque a banda para <b>5GHz</b> ou <b>Auto</b>; senão o filtro de 2.4GHz bloqueia a associação.</li>
+        <li><b>5GHz</b> usa só canais <b>não-DFS</b> (o AP não consegue seguir DFS). Default é <b>2.4GHz</b> (mais compatível/estável).</li>
+      </ul>
+    </section>
+
+    <section id="deadman">
+      <h2>Rede de segurança: deadman rollback 🪂</h2>
+      <p>Aplicar via SSH remoto é arriscado. O <b>deadman switch</b> (opt-in com <code>-e deadman_rollback=true</code>) protege:</p>
+      <ul>
+        <li><b>Arma antes de qualquer mudança de rede</b> (primeira coisa do playbook). Se o apply morrer no meio, o rollback ainda acontece.</li>
+        <li>Enquanto valida, mantenha o <b>heartbeat</b> vivo (<code>sudo travel-router-keepalive</code> a cada &lt; 5 min). Sem heartbeat → o Pi <b>reverte ao estado base</b> (wlan0 no NetworkManager, sem AP/NAT, Tailscale sem exit node) e reinicia.</li>
+        <li>Um perfil de <b>fallback do uplink</b> garante que o rollback sempre reconecta online.</li>
+      </ul>
+      <pre><code>sudo travel-router-keepalive   # mantém vivo enquanto valida
+sudo travel-router-commit      # deu tudo certo → torna permanente
+sudo travel-router-rollback    # reverte manualmente ao estado base</code></pre>
+    </section>
+
+    <section id="aprendizados">
+      <h2>Aprendizados 🧠</h2>
+      <p>Os problemas reais que moldaram o projeto — e as soluções.</p>
+
+      <div class="callout key">
+        <p class="lbl">1. Reiniciar o hostapd trava a firmware do rádio</p>
+        <p>No rádio único (brcmfmac), <code>systemctl restart hostapd</code> <b>com o uplink ativo</b> trava a firmware (<code>-52</code>) e derruba AP <b>e</b> uplink. Era o que a versão antiga fazia para "seguir o canal" do hotel — por isso o AP caía quando o hotel usava um canal diferente. E <code>chan_switch</code> (CSA) não é suportado nesse chip.</p>
+        <p><b>Solução:</b> descobrir o canal do uplink <b>antes</b> do hostapd subir e fixá-lo no <code>hostapd.conf</code>. O AP sobe <b>uma vez</b>, no canal certo, e <b>nunca</b> reinicia. Trocar de canal = novo boot. Isso faz <b>5GHz funcionar sem dongle</b> — o AP acompanha canal e banda.</p>
+      </div>
+
+      <div class="callout key">
+        <p class="lbl">2. A rede de segurança tem que armar cedo</p>
+        <p>O deadman como <b>última</b> etapa só protege quando tudo já deu certo — inútil se o apply morre no meio. Ele passou a ser a <b>primeira</b> coisa, antes de tocar na rede.</p>
+      </div>
+
+      <div class="callout key">
+        <p class="lbl">3. O rollback precisa de credencial de uplink</p>
+        <p>Um rollback devolveu a <code>wlan0</code> ao NetworkManager <b>sem nenhuma credencial</b> → Pi órfão, offline permanente. Agora um perfil de <b>fallback</b> (com o SSID/senha do uplink) é instalado antes, garantindo que qualquer rollback volte online.</p>
+      </div>
+
+      <div class="callout key">
+        <p class="lbl">4. Cutover determinístico, não por "changed"</p>
+        <p>Handlers condicionados a mudança não disparavam num re-apply (config idêntica) e deixavam a <code>wlan0</code> no limbo. O cutover do uplink virou um passo <b>explícito e incondicional</b>, com checkpoint que só segue quando o uplink tem IP.</p>
+      </div>
+
+      <div class="callout key">
+        <p class="lbl">5. Subir a STA destrói o AP virtual</p>
+        <p>(Re)inicializar o uplink no rádio único apaga a <code>uap0</code>. O orquestrador <b>recria a uap0 depois</b> que a STA sobe e <b>antes</b> do hostapd — de forma idempotente (cria só se faltar).</p>
+      </div>
+
+      <div class="callout key">
+        <p class="lbl">6. Repo público, zero segredo</p>
+        <p>Tudo específico do ambiente vive em <code>config.yml</code> e <code>uplink.conf</code> (gitignored). Sem ansible-vault (não faz sentido num repo reaproveitável). O README explica como criar o <code>config.yml</code> antes de aplicar.</p>
+      </div>
+
+      <div class="callout">
+        <p class="lbl">Bônus: web app fora do ar? Provavelmente é https</p>
+        <p>Navegadores forçam <code>https://</code> automaticamente; o app só serve <b>http na porta 80</b>. O firewall <b>rejeita</b> a 443 (com tcp reset) para o navegador cair de volta no http sozinho — mas se digitar, use <code>http://</code>.</p>
+      </div>
+    </section>
+
+    <section id="troubleshooting">
+      <h2>Troubleshooting</h2>
+      <table>
+        <tr><th>Sintoma</th><th>Causa / o que fazer</th></tr>
+        <tr><td>Web app não abre / tela branca</td><td>Você usou <code>https://</code>. Use <code>http://192.168.88.1</code>.</td></tr>
+        <tr><td>Perdi o acesso ao Pi durante um apply</td><td>Com o deadman armado, espere ≤ 5 min: ele reverte ao estado base e reconecta. Depois reaplique com o fix.</td></tr>
+        <tr><td>AP no ar mas sem internet</td><td>Rede de hotel com login: entre no modo <code>portal</code>, faça o login, volte para <code>secure</code>.</td></tr>
+        <tr><td>Escolhi uma rede 5GHz e o uplink não conecta</td><td>Troque a banda para <b>5GHz</b>/<b>Auto</b> antes (o padrão 2.4GHz bloqueia a associação em 5GHz).</td></tr>
+        <tr><td>AP caiu</td><td>O watchdog repara em ≤ 60s. Persistindo, reinicie o Pi (o boot ressobe tudo na ordem certa).</td></tr>
+        <tr><td>Hotel só-5GHz num canal DFS</td><td>Único caso que o rádio único não cobre (o AP não pode transmitir em DFS). Use uplink por Ethernet ou um dongle USB dedicado.</td></tr>
+      </table>
+    </section>
+
+    <footer>
+      Projeto open-source · <a href="https://github.com/rpagliuca/rpi5-hotel-travel-router">github.com/rpagliuca/rpi5-hotel-travel-router</a> · reaproveitável, sem dados pessoais.
+    </footer>
+  </main>
+</div>
+</body>
+</html>
