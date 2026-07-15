@@ -173,9 +173,12 @@ Para isso existe o **deadman switch** (role `rollback-guard`), opt-in:
 ansible-playbook playbook.yml -e @config.yml -e deadman_rollback=true
 ```
 
-Ao final, o Pi fica **armado**: se o heartbeat não for tocado dentro de
-`deadman_timeout_sec` (padrão 300s), ele **reverte ao estado base** (`wlan0` de
-volta ao NetworkManager, Tailscale sem exit node, sem AP/NAT) e reinicia.
+O deadman arma **antes de qualquer mudança de rede** (`rollback-guard` é a
+primeira role): se o playbook morrer no meio, ou o heartbeat não for tocado
+dentro de `deadman_timeout_sec` (padrão 300s), o Pi **reverte ao estado base**
+(`wlan0` de volta ao NetworkManager, Tailscale sem exit node, sem AP/NAT) e
+reinicia. Ao final do apply, um `post_tasks` valida que o **AP está no ar** —
+se não estiver, o playbook falha de propósito e o deadman faz o rollback.
 
 Fluxo:
 

@@ -24,6 +24,13 @@
       tags: [always]
 
   roles:
+    # PRIMEIRO: instala os CLIs de rollback e (se deadman_rollback=true) ARMA
+    # o deadman switch ANTES de qualquer mudanca de rede. Se o playbook morrer
+    # no meio (ou o operador perder o acesso), o deadman reverte ao estado base.
+    # Licao aprendida: como ultima role, o deadman so armava quando tudo ja
+    # tinha dado certo — ou seja, exatamente quando nao era mais necessario.
+    - role: rollback-guard
+      tags: [rollback-guard]
     - role: base
       tags: [base]
     - role: wifi-client
@@ -36,7 +43,25 @@
       tags: [tailscale]
     - role: webapp
       tags: [webapp]
-    # Por ultimo: instala os CLIs de rollback e (se deadman_rollback=true) ARMA
-    # o deadman switch — rede de seguranca para aplicar remotamente.
-    - role: rollback-guard
-      tags: [rollback-guard]
+
+  post_tasks:
+    # "AP-first" como verificacao, nao so intencao: se o AP nao estiver de pe
+    # ao final do apply, FALHAR de proposito — com o deadman armado, a falha
+    # vira rollback automatico ao estado base em vez de um Pi inacessivel.
+    - name: Validar que o AP esta no ar ao final do apply
+      block:
+        - name: hostapd ativo?
+          command: systemctl is-active hostapd
+          register: tr_hostapd_state
+          changed_when: false
+
+        - name: "{{ ap_interface }} com o IP do AP?"
+          command: ip -br addr show {{ ap_interface }}
+          register: tr_uap_addr
+          changed_when: false
+          failed_when: ap_ip not in tr_uap_addr.stdout
+
+        - name: AP OK
+          debug:
+            msg: "AP no ar: hostapd={{ tr_hostapd_state.stdout }}, {{ ap_interface }}={{ ap_ip }}"
+      tags: [always]
