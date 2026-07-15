@@ -1,0 +1,12 @@
+# Uplink do travel-router — FONTE DA VERDADE (persiste entre reboots).
+# Editado pelo webapp (escolher rede / banda) que grava aqui e reinicia o Pi.
+# Semeado do config.yml só na 1ª provisão (bootstrap); depois quem manda é este
+# arquivo. Formato KEY=VALUE, um por linha (o valor é tudo após o 1º '=').
+#   SSID      nome da rede do hotel
+#   PASSWORD  senha (ignorada se OPEN=true)
+#   OPEN      true = rede aberta (captive portal) / false = WPA-PSK
+#   BAND      24 = só 2.4GHz (default, mais estável) | 5 = só 5GHz | auto = ambas
+SSID={{ hotel_ssid }}
+PASSWORD={{ hotel_password | default('') }}
+OPEN={{ 'true' if (hotel_open | default(false) | bool) else 'false' }}
+BAND={{ uplink_band | default('24') }}

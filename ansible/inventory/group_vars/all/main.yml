@@ -6,24 +6,24 @@
 # ── AP privado ────────────────────────────────────────────────────────────────
 ap_ssid: "TravelRouter"     # override em config.yml
 ap_interface: "uap0"        # AP virtual sobre a wlan0 onboard
-ap_channel: 6               # canal padrão/fallback (auto-sincronizado se ap_channel_auto)
-ap_channel_auto: true       # rádio único: re-sincroniza o canal do AP com o do uplink
+ap_channel: 6               # canal DEFAULT (usado quando não há uplink associado)
 ap_subnet: "192.168.88.0/24"
 ap_ip: "192.168.88.1"
 ap_dhcp_start: "192.168.88.100"
 ap_dhcp_end: "192.168.88.150"
-ap_hw_mode: "g"             # "g" = 2.4GHz; "a" para 5GHz se o rádio suportar
+ap_hw_mode: "g"             # estado inicial; o orquestrador ajusta g/a conforme o canal do uplink
 
 # ── Uplink (cliente do hotel) ─────────────────────────────────────────────────
+# Rádio único: o AP acompanha o canal do uplink, fixado UMA vez no boot pelo
+# orquestrador (travel-router-uplink), nunca por restart do hostapd — reiniciar
+# o hostapd com o uplink ativo trava a firmware do rádio. Trocar de rede/banda
+# é "grava no uplink.conf -> reboot" (via webapp).
 uplink_interface: "wlan0"   # rádio onboard; compartilha canal com o uap0
 hotel_open: false           # override em config.yml (true p/ redes abertas)
 eth_interface: "eth0"       # uplink ethernet alternativo
-# AP-sempre-de-pé: PREFERE 2.4GHz no uplink (canais 1-13, onde o AP segue
-# qualquer canal), com fallback em 5GHz APENAS nos canais não-DFS (36-48,
-# 149-165), onde o hostapd pode operar — o channel-sync troca a banda do AP
-# junto. Canais DFS (52-144) nunca são usados: o AP não conseguiria segui-los.
-# false = um bloco único sem freq_list (sem garantias de canal).
-uplink_prefer_24ghz: true
+# Banda do uplink: 24 = só 2.4GHz (default, mais estável) | 5 = só 5GHz | auto.
+# O AP segue o canal do uplink em qualquer banda. Troque pelo webapp (com reboot).
+uplink_band: "24"
 
 # ── Tailscale ─────────────────────────────────────────────────────────────────
 tailscale_hostname: "rpi5-travel-router"

@@ -5,19 +5,21 @@
     name: hostapd
     masked: false
 
+# hostapd.conf: channel/hw_mode sao FIXADOS em runtime pelo orquestrador
+# (travel-router-uplink) antes do hostapd subir. NAO notificamos restart aqui:
+# reiniciar o hostapd com a STA ativa trava a firmware (-52). Mudancas de canal
+# valem no proximo boot (o modelo e "grava config -> reboot").
 - name: Deploy hostapd config
   template:
     src: hostapd.conf.j2
     dest: /etc/hostapd/hostapd.conf
     mode: "0600"
-  notify: Restart hostapd
 
 - name: Point hostapd to config file
   lineinfile:
     path: /etc/default/hostapd
     regexp: "^#?DAEMON_CONF"
     line: 'DAEMON_CONF="/etc/hostapd/hostapd.conf"'
-  notify: Restart hostapd
 
 # systemd-networkd: assign static IP to uap0 (the AP side)
 - name: Deploy systemd-networkd config for uap0
@@ -35,51 +37,26 @@
     mode: "0644"
   notify: Restart dnsmasq
 
-# ── Auto-sync do canal do AP com o canal do uplink (radio unico) ──────────────
-- name: Deploy hostapd channel-sync script
-  template:
-    src: hostapd-channel-sync.sh.j2
-    dest: /usr/local/bin/hostapd-channel-sync.sh
-    mode: "0755"
-  when: ap_channel_auto | default(true)
-
-- name: Deploy hostapd channel-sync service
-  template:
-    src: hostapd-channel-sync.service.j2
-    dest: /etc/systemd/system/hostapd-channel-sync.service
-    mode: "0644"
-  when: ap_channel_auto | default(true)
-  notify:
-    - Reload systemd
-    - Restart hostapd
-
-- name: Enable hostapd channel-sync service
-  systemd:
-    name: hostapd-channel-sync
-    enabled: true
-    daemon_reload: true
-  when: ap_channel_auto | default(true)
-
-# hostapd must not start before uap0 exists (also covers manual restarts)
+# hostapd nao pode subir antes do uap0 existir E do orquestrador fixar o canal
 - name: Create hostapd systemd drop-in directory
   file:
     path: /etc/systemd/system/hostapd.service.d
     state: directory
     mode: "0755"
 
-# AP-FIRST: hostapd depende SÓ do uap0-create (interface local). Não espera
-# uplink, tailscale nem channel-sync. Restart=always => o AP se auto-recupera.
-- name: Harden hostapd (AP-first + auto-restart)
+# AP-FIRST (com canal certo): o hostapd sobe DEPOIS do orquestrador de uplink,
+# que ja fixou channel/hw_mode. Se o orquestrador falhar/expirar, o hostapd sobe
+# assim mesmo (Wants, nao Requires) no canal que estiver no conf — o AP nunca
+# fica refem do uplink. Restart=always recupera crashes (start de um hostapd
+# parado nao dispara o wedge; so o restart de um hostapd ATIVO trava).
+- name: Harden hostapd (AP-first, canal-no-boot, auto-restart)
   copy:
     dest: /etc/systemd/system/hostapd.service.d/uap0.conf
     content: |
       [Unit]
       Requires=uap0-create.service
-      After=uap0-create.service
-      # channel-sync é soft (Wants), nunca bloqueia a subida do AP
-      {% if ap_channel_auto | default(true) %}
-      Wants=hostapd-channel-sync.service
-      {% endif %}
+      After=uap0-create.service travel-router-uplink.service
+      Wants=travel-router-uplink.service
       # Nunca desistir de reiniciar o AP (rate limit desligado)
       StartLimitIntervalSec=0
 
@@ -87,9 +64,7 @@
       Restart=always
       RestartSec=3
     mode: "0644"
-  notify:
-    - Reload systemd
-    - Restart hostapd
+  notify: Reload systemd
 
 - name: Enable and start hostapd
   systemd:
@@ -105,6 +80,8 @@
     state: started
 
 # ── Watchdog do AP: repara uap0/hostapd/IP/dnsmasq a cada minuto ──────────────
+# So age quando algo esta INATIVO (start de um hostapd parado e seguro; nunca
+# reinicia um hostapd ativo, que travaria a firmware).
 - name: Deploy AP watchdog script
   template:
     src: ap-watchdog.sh.j2

@@ -17,9 +17,7 @@
     group: root
   notify: Reload NetworkManager
 
-# Raspberry Pi OS Bookworm manages interfaces with NetworkManager by default.
-# Keep it away from the radio; eth0 stays under NM (works as ethernet uplink
-# out of the box — Tailscale rides over whichever uplink is active).
+# Mantem o NetworkManager longe do radio; eth0 fica no NM (uplink ethernet).
 - name: Keep NetworkManager away from wlan0/uap0
   copy:
     dest: /etc/NetworkManager/conf.d/99-travel-router-unmanaged.conf
@@ -36,22 +34,52 @@
     enabled: false
   failed_when: false
 
-# wpa_supplicant config for hotel WiFi uplink
-- name: Deploy wpa_supplicant config for wlan0
-  template:
-    src: wpa_supplicant-wlan0.conf.j2
-    dest: /etc/wpa_supplicant/wpa_supplicant-{{ uplink_interface }}.conf
-    mode: "0600"
-  notify: Restart wpa_supplicant
+# ── FONTE DA VERDADE do uplink (SSID/senha/banda). BOOTSTRAP-ONLY: semeado do
+#    config.yml so na 1a provisao; depois quem manda e o webapp (grava aqui e
+#    reinicia). force: uplink_reset=true forca reset pelo config.yml.
+- name: Diretorio de estado do travel-router
+  file:
+    path: /var/lib/travel-router
+    state: directory
+    mode: "0755"
 
-# So habilita aqui; o start acontece no cutover deterministico do final da
-# role (iniciar agora, com a wlan0 ainda no NM, deixa o daemon capenga).
+- name: Semear uplink.conf (fonte da verdade do uplink)
+  template:
+    src: uplink.conf.j2
+    dest: /var/lib/travel-router/uplink.conf
+    mode: "0600"
+    force: "{{ uplink_reset | default(false) | bool }}"
+
+# ── Orquestrador: sobe a STA, descobre o canal e fixa o hostapd.conf ANTES do
+#    hostapd subir. Radio unico: reiniciar hostapd com a STA ativa trava a
+#    firmware (-52), entao o AP sobe UMA vez ja no canal certo e nunca reinicia.
+- name: Deploy do orquestrador de uplink (canal-no-boot)
+  template:
+    src: travel-router-uplink-up.sh.j2
+    dest: /usr/local/sbin/travel-router-uplink-up.sh
+    mode: "0755"
+
+- name: Deploy do servico do orquestrador de uplink
+  template:
+    src: travel-router-uplink.service.j2
+    dest: /etc/systemd/system/travel-router-uplink.service
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Habilitar o orquestrador de uplink
+  systemd:
+    name: travel-router-uplink.service
+    enabled: true
+    daemon_reload: true
+
+# wpa_supplicant@wlan0: habilitado, mas quem faz o start/regenera o conf e o
+# orquestrador (start precoce com conf velho ou wlan0 no NM deixa o daemon capenga).
 - name: Enable wpa_supplicant for wlan0
   systemd:
     name: "wpa_supplicant@{{ uplink_interface }}"
     enabled: true
 
-# Systemd service to create the virtual AP interface (uap0) over wlan0
+# Cria a interface de AP virtual uap0 sobre a wlan0 (antes do hostapd)
 - name: Deploy uap0-create systemd service
   template:
     src: uap0-create.service.j2
@@ -67,7 +95,7 @@
     enabled: true
     daemon_reload: true
 
-# systemd-networkd: DHCP on wlan0 for the hotel WiFi IP
+# systemd-networkd: DHCP na wlan0 para o IP do hotel
 - name: Deploy systemd-networkd config for wlan0
   copy:
     dest: /etc/systemd/network/20-wlan0.network
@@ -86,15 +114,10 @@
     enabled: true
     state: started
 
-# ── Cutover deterministico do uplink ──────────────────────────────────────────
-# NAO depender de handlers condicionados a "changed": apos um rollback os
-# configs podem estar identicos e nenhum handler dispara — a wlan0 fica no
-# limbo (NM solta no reload final, wpa_supplicant morto do start precoce) e o
-# Pi cai offline ate o deadman agir (incidente 2026-07-14). A sequencia abaixo
-# reproduz o cutover manual que funciona: soltar a wlan0 do NM em runtime,
-# restart LIMPO do wpa_supplicant e do networkd, e um checkpoint que so deixa
-# o play continuar com o uplink de pe.
-
+# ── Cutover do apply = rodar o orquestrador ───────────────────────────────────
+# Em vez de restart de handlers condicionados a "changed" (fragil apos rollback),
+# roda o orquestrador de forma incondicional: solta a wlan0 do NM, sobe a STA,
+# espera associar e fixa o canal do hostapd. Mesmo procedimento do boot.
 - name: Aplicar handlers pendentes agora (Reload NM etc.)
   meta: flush_handlers
 
@@ -103,15 +126,9 @@
   changed_when: false
   failed_when: false
 
-- name: Restart limpo do wpa_supplicant do uplink
-  systemd:
-    name: "wpa_supplicant@{{ uplink_interface }}"
-    state: restarted
-
-- name: Restart do systemd-networkd
-  systemd:
-    name: systemd-networkd
-    state: restarted
+- name: Rodar o orquestrador de uplink (sobe STA + fixa canal do AP)
+  command: /usr/local/sbin/travel-router-uplink-up.sh
+  changed_when: false
 
 - name: Checkpoint - aguardar o uplink obter IPv4 (ate 90s)
   command: ip -4 -br addr show {{ uplink_interface }}
@@ -120,3 +137,4 @@
   retries: 30
   delay: 3
   changed_when: false
+  failed_when: false

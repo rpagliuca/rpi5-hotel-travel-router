@@ -1,0 +1,19 @@
+[Unit]
+Description=Travel Router — sobe o uplink e fixa o canal do AP (antes do hostapd)
+# uap0 já deve existir; rodamos ANTES do hostapd para ele subir no canal certo.
+After=uap0-create.service network-pre.target
+Wants=uap0-create.service
+Before=hostapd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Sempre termina (espera o uplink por ~40s e então segue); nunca trava o boot.
+TimeoutStartSec=90
+ExecStart=/usr/local/sbin/travel-router-uplink-up.sh
+# Best-effort: mesmo se falhar, o hostapd sobe (Wants, não Requires) no canal
+# que estiver no hostapd.conf — o AP nunca fica refém deste passo.
+SuccessExitStatus=0 1
+
+[Install]
+WantedBy=multi-user.target

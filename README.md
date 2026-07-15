@@ -21,16 +21,21 @@ Ansible + InSpec IaC to turn a **Raspberry Pi 5** into a travel router: connects
 A prioridade nº1 é **nunca perder acesso ao Pi**. O AP privado (`TravelRouter`,
 `192.168.88.1`) é a âncora de segurança:
 
-- **Sobe primeiro e desacoplado.** `hostapd` depende apenas do `uap0-create`
-  (interface local) — **não** espera hotel, Tailscale ou roteamento. Se qualquer
-  etapa seguinte falhar, o AP continua de pé e você entra por `ssh <user>@192.168.88.1`.
+- **Sempre sobe.** No boot, o orquestrador (`travel-router-uplink`) tenta subir o
+  uplink por até ~40s e lê o canal dele; **associando ou não**, o `hostapd` sobe
+  em seguida (no canal do uplink, ou no canal default se o uplink falhar). Se o
+  Wi-Fi do hotel estiver fora de alcance/errado, o AP sobe assim mesmo — é por ele
+  que você entra no webapp para escolher outra rede.
+- **Rádio único, sem restart do AP.** AP e uplink compartilham o rádio, então o AP
+  precisa estar no canal do uplink. Esse canal é fixado **uma vez, antes do
+  `hostapd` subir** — o AP **nunca** é reiniciado para trocar de canal, porque
+  reiniciar o `hostapd` com o uplink ativo trava a firmware do rádio (brcmfmac).
+  Trocar de rede/canal/banda é **gravar a escolha e reiniciar o Pi** (o webapp faz isso).
 - **Auto-recupera.** `hostapd` roda com `Restart=always`, e um **watchdog**
   (`ap-watchdog`, a cada 60s) repara `uap0`, o IP estático, o `hostapd` e o
-  `dnsmasq` se algo cair.
+  `dnsmasq` se algo cair (sempre com *start*, nunca *restart* de um AP ativo).
 - **Senha pessoal.** O AP usa WPA2 com a sua `ap_password` (do `config.yml`) —
   só você entra. SSH pela sub-rede do AP é sempre liberado no firewall.
-- **Rádio único:** o canal do AP é re-sincronizado (best-effort) com o canal do
-  hotel *depois* de o AP já estar no ar — sem nunca bloquear a subida do AP.
 
 ## Modos: `portal` ↔ `secure`
 

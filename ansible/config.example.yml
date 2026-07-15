@@ -34,6 +34,6 @@ tailscale_exit_node_allow_lan_access: true
 timezone: "America/Sao_Paulo"
 
 # ── Opcionais (têm padrão em group_vars/all/main.yml; descomente p/ mudar) ─────
-# ap_channel: 6
-# ap_channel_auto: true
+# ap_channel: 6                       # canal default do AP (sem uplink associado)
+# uplink_band: "24"                   # "24" só 2.4GHz (default) | "5" só 5GHz | "auto"
 # travel_router_boot_mode: "secure"   # ou "portal"
