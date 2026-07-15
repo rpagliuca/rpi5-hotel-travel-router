@@ -35,6 +35,10 @@ table inet filter {
         # Web app de configuração (http://{{ ap_ip }})
         iifname "{{ ap_interface }}" tcp dport {{ webapp_port }} accept
 
+        # Navegadores fazem auto-upgrade para https; REJEITAR (nao dropar) a
+        # 443 faz o browser falhar na hora e cair de volta pro http sozinho.
+        iifname "{{ ap_interface }}" tcp dport 443 reject with tcp reset
+
         # Allow ICMP
         ip protocol icmp accept
         ip6 nexthdr icmpv6 accept
