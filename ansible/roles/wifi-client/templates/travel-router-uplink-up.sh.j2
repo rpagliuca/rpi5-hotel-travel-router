@@ -1,0 +1,99 @@
+#!/bin/bash
+# ═══════════════════════════════════════════════════════════════════════════
+# Orquestra uplink + AP na ordem que o RÁDIO ÚNICO do Pi exige. Roda no boot
+# (travel-router-uplink.service) e no apply do ansible.
+#
+# Regra de ouro (provada em 2026-07-15): reiniciar o hostapd com a STA (uplink)
+# ativa TRAVA a firmware brcmfmac (-52) e derruba AP + uplink juntos. Por isso o
+# AP tem que subir UMA vez, já no canal do uplink, e NUNCA reiniciar. Este script
+# descobre o canal ANTES do hostapd subir:
+#   1) gera o wpa_supplicant.conf a partir do uplink.conf (fonte da verdade)
+#   2) sobe a STA e espera associar (até UP_WAIT s), lê o canal
+#   3) escreve canal+hw_mode no hostapd.conf  (hostapd ainda NÃO subiu)
+#   4) sai 0 -> o hostapd.service (ordenado depois) sobe no canal certo
+# Se a STA não associar (SSID fora de alcance, senha errada, etc.), escreve o
+# canal DEFAULT: o AP SEMPRE sobe — é a âncora pra você entrar no webapp.
+# ═══════════════════════════════════════════════════════════════════════════
+set -u
+
+UPLINK="{{ uplink_interface }}"
+CONF="/var/lib/travel-router/uplink.conf"
+WPA_CONF="/etc/wpa_supplicant/wpa_supplicant-${UPLINK}.conf"
+HOSTAPD_CONF="/etc/hostapd/hostapd.conf"
+COUNTRY="{{ wifi_country | default('BR') }}"
+DEFAULT_CH="{{ ap_channel | default(6) }}"
+UP_WAIT=40
+
+FREQ24="2412 2417 2422 2427 2432 2437 2442 2447 2452 2457 2462 2467 2472"
+FREQ5="5180 5200 5220 5240 5745 5765 5785 5805 5825"
+
+# ── lê uplink.conf: valor = tudo após o 1º '=' (sem eval, aguenta caractere especial) ──
+getval() { grep -m1 "^$1=" "$CONF" 2>/dev/null | cut -d= -f2-; }
+SSID="$(getval SSID)"
+PASSWORD="$(getval PASSWORD)"
+OPEN="$(getval OPEN)"
+BAND="$(getval BAND)"
+[ -n "$BAND" ] || BAND=24
+
+case "$BAND" in
+  24) FREQS="$FREQ24" ;;
+  5)  FREQS="$FREQ5" ;;
+  *)  FREQS="" ;;   # auto: sem restrição de banda
+esac
+
+# ── gera o wpa_supplicant.conf ────────────────────────────────────────────────
+umask 077
+{
+  echo "ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev"
+  echo "update_config=1"
+  echo "country=$COUNTRY"
+  echo
+  echo "network={"
+  echo "    ssid=\"$SSID\""
+  if [ "$OPEN" = "true" ]; then
+    echo "    key_mgmt=NONE"
+  else
+    echo "    psk=\"$PASSWORD\""
+    echo "    key_mgmt=WPA-PSK"
+  fi
+  echo "    scan_ssid=1"
+  [ -n "$FREQS" ] && echo "    freq_list=$FREQS"
+  echo "}"
+} > "$WPA_CONF"
+chmod 600 "$WPA_CONF"
+logger -t tr-uplink "wpa_supplicant.conf gerado (SSID='$SSID' OPEN=$OPEN BAND=$BAND)"
+
+# ── sobe a STA (seguro: o hostapd/AP ainda não está ativo neste ponto) ────────
+systemctl restart "wpa_supplicant@${UPLINK}.service" 2>/dev/null || true
+systemctl restart systemd-networkd 2>/dev/null || true
+
+# ── espera associar e lê o canal ─────────────────────────────────────────────
+ch=""
+for _ in $(seq 1 "$UP_WAIT"); do
+  state="$(wpa_cli -i "$UPLINK" status 2>/dev/null | sed -n 's/^wpa_state=//p')"
+  if [ "$state" = "COMPLETED" ]; then
+    freq="$(wpa_cli -i "$UPLINK" status 2>/dev/null | sed -n 's/^freq=//p')"
+    if [ -n "$freq" ]; then
+      if   [ "$freq" = 2484 ]; then ch=14
+      elif [ "$freq" -ge 2412 ] && [ "$freq" -le 2472 ]; then ch=$(( (freq - 2407) / 5 ))
+      elif [ "$freq" -ge 5000 ] && [ "$freq" -le 5900 ]; then ch=$(( (freq - 5000) / 5 ))
+      fi
+      [ -n "$ch" ] && break
+    fi
+  fi
+  sleep 1
+done
+
+# ── decide canal/banda do AP ─────────────────────────────────────────────────
+if [ -n "$ch" ]; then
+  logger -t tr-uplink "uplink associado no canal $ch"
+else
+  ch="$DEFAULT_CH"
+  logger -t tr-uplink "uplink NAO associou em ${UP_WAIT}s; AP sobe no canal default $ch (ancora)"
+fi
+if [ "$ch" -gt 14 ] 2>/dev/null; then hw="a"; else hw="g"; fi
+
+# ── escreve canal+hw_mode no hostapd.conf (hostapd sobe DEPOIS, no canal certo) ──
+sed -i "s/^channel=.*/channel=$ch/; s/^hw_mode=.*/hw_mode=$hw/" "$HOSTAPD_CONF"
+logger -t tr-uplink "hostapd.conf ajustado: channel=$ch hw_mode=$hw"
+exit 0

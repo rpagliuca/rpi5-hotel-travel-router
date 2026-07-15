@@ -1,3 +1,5 @@
+# ctrl_interface: necessario para hostapd_cli (status/diagnostico do AP).
+ctrl_interface=/var/run/hostapd
 interface={{ ap_interface }}
 driver=nl80211
 ssid={{ ap_ssid }}
@@ -13,7 +15,8 @@ wpa_key_mgmt=WPA-PSK
 rsn_pairwise=CCMP
 country_code={{ wifi_country | default('BR') }}
 
-# NOTE: canal e hw_mode sao GERIDOS pelo hostapd-channel-sync: radio unico,
-# AP e uplink compartilham canal, entao o sync re-sintoniza o AP (canal E
-# banda g/a) para casar com onde o uplink associou. Os valores acima sao so
-# o estado inicial/fallback quando nao ha uplink.
+# NOTE: 'channel' e 'hw_mode' acima sao apenas o estado inicial/fallback. O
+# orquestrador travel-router-uplink FIXA os valores certos (canal do uplink e
+# g/a) via sed ANTES do hostapd subir — radio unico, AP e uplink compartilham
+# canal. O AP nunca reinicia para trocar de canal (isso travaria a firmware);
+# trocar de canal = novo boot.

@@ -73,10 +73,23 @@
       <label id="f-passlbl" style="display:block;margin-top:8px">Senha</label>
       <input id="f-pass" type="password" placeholder="senha do Wi-Fi">
       <div class="btns" style="margin-top:12px">
-        <button onclick="connectUplink()">Conectar</button>
+        <button onclick="connectUplink()">Conectar e reiniciar</button>
         <button class="sec" onclick="document.getElementById('connform').style.display='none'">Cancelar</button>
       </div>
     </div>
+    <div class="hint">Ao conectar, o Pi <b>reinicia</b> (~1 min) para subir o AP no
+      canal certo. O AP privado volta sozinho — reconecte-se a ele depois.</div>
+  </div>
+
+  <div class="card">
+    <h2>Banda do uplink</h2>
+    <div class="row"><span class="k">Atual</span><span class="v"><span id="s-band" class="pill">—</span></span></div>
+    <div class="btns" style="margin-top:8px">
+      <button class="sec" id="b-band-24" onclick="setBand('24')">2.4 GHz</button>
+      <button class="sec" id="b-band-5" onclick="setBand('5')">5 GHz</button>
+      <button class="sec" id="b-band-auto" onclick="setBand('auto')">Auto</button>
+    </div>
+    <div class="hint">2.4 GHz é o mais compatível. Trocar a banda <b>reinicia</b> o Pi.</div>
   </div>
 
   <div class="card">
@@ -108,6 +121,9 @@ async function refresh(){
     $('s-clients').textContent = d.ap_clients;
     $('b-secure').className = mode==='secure' ? '' : 'sec';
     $('b-portal').className = mode==='portal' ? '' : 'sec';
+    const band = d.band||'24';
+    $('s-band').textContent = band==='24'?'2.4 GHz':band==='5'?'5 GHz':'Auto';
+    ['24','5','auto'].forEach(b=>{ const el=$('b-band-'+b); if(el) el.className = band===b ? '' : 'sec'; });
   }catch(e){ $('st-refresh').textContent='(sem conexão)'; }
 }
 setInterval(refresh, 5000); refresh();
@@ -148,10 +164,16 @@ async function connectUplink(){
   const ssid=$('f-ssid').value.trim();
   const passEl=$('f-pass');
   const open = passEl.style.display==='none';
-  toast('Conectando em '+ssid+'…');
+  toast('Salvando '+ssid+'…');
   const d = await api('/api/uplink',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ssid, open, password:passEl.value})});
-  toast(d.ok ? 'Config aplicada. Aguardando conexão…' : 'Erro: '+(d.error||''));
-  if(d.ok){ $('connform').style.display='none'; setTimeout(refresh,4000); }
+  if(d.ok){ $('connform').style.display='none'; toast('Reiniciando para conectar em '+ssid+' (~1 min)…'); }
+  else { toast('Erro: '+(d.error||'')); }
+}
+async function setBand(b){
+  const label = b==='24'?'2.4 GHz':b==='5'?'5 GHz':'Auto';
+  if(!confirm('Trocar a banda do uplink para '+label+'? O Pi reinicia (~1 min).'))return;
+  const d = await api('/api/band',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({band:b})});
+  toast(d.ok ? 'Banda '+label+' — reiniciando…' : 'Erro: '+(d.error||''));
 }
 async function doReboot(){ if(!confirm('Reiniciar o Pi? Você perde a conexão por ~1 min.'))return; await api('/api/reboot',{method:'POST'}); toast('Reiniciando…'); }
 async function doRollback(){ if(!confirm('Reverter ao estado base? O AP e as regras serão desfeitos e o Pi reinicia.'))return; await api('/api/rollback',{method:'POST'}); toast('Revertendo…'); }

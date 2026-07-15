@@ -13,13 +13,10 @@ UPLINK  = "{{ uplink_interface }}"
 AP_IF   = "{{ ap_interface }}"
 AP_IP   = "{{ ap_ip }}"
 COUNTRY = "{{ wifi_country | default('BR') }}"
-WPA_CONF = "/etc/wpa_supplicant/wpa_supplicant-%s.conf" % UPLINK
-# AP-sempre-de-pé com PREFERÊNCIA por 2.4GHz (nao restricao): dois blocos de
-# rede, prioridade alta em 2.4 (canais 1-13) e fallback em 5GHz apenas nos
-# canais nao-DFS (o AP consegue seguir). Ver uplink_prefer_24ghz no main.yml.
-UPLINK_PREFER_24GHZ = {{ 'True' if (uplink_prefer_24ghz | default(true) | bool) else 'False' }}
-FREQ_LIST_24 = "2412 2417 2422 2427 2432 2437 2442 2447 2452 2457 2462 2467 2472"
-FREQ_LIST_5_NONDFS = "5180 5200 5220 5240 5745 5765 5785 5805 5825"
+# Fonte da verdade do uplink. Escolher rede/banda grava aqui e REINICIA: o boot
+# sobe a STA no canal certo e o AP acompanha (radio unico nao aguenta trocar o
+# canal do AP com o uplink ativo — travaria a firmware).
+UPLINK_CONF = "/var/lib/travel-router/uplink.conf"
 HTML_PATH = "/opt/travel-router-web/index.html"
 
 app = Flask(__name__)
@@ -63,6 +60,38 @@ def read_mode():
             return f.read().strip()
     except OSError:
         return "desconhecido"
+
+
+def read_uplink_conf():
+    d = {}
+    try:
+        with open(UPLINK_CONF) as f:
+            for line in f:
+                line = line.rstrip("\n")
+                if line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                d[k] = v
+    except OSError:
+        pass
+    return d
+
+
+def write_uplink_conf(d):
+    lines = [
+        "# Uplink do travel-router (gravado pelo webapp). KEY=VALUE por linha.",
+        "SSID=%s" % d.get("SSID", ""),
+        "PASSWORD=%s" % d.get("PASSWORD", ""),
+        "OPEN=%s" % ("true" if str(d.get("OPEN")).lower() == "true" else "false"),
+        "BAND=%s" % (d.get("BAND") or "24"),
+    ]
+    with open(UPLINK_CONF, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    os.chmod(UPLINK_CONF, 0o600)
+
+
+def reboot_in(secs=2):
+    subprocess.Popen(["/bin/sh", "-c", "sleep %d; systemctl reboot" % secs])
 
 
 def tailscale_info():
@@ -110,6 +139,7 @@ def api_status():
         "internet": rc_i == 0,
         "mode": read_mode(),
         "ap_clients": clients,
+        "band": read_uplink_conf().get("BAND", "24"),
     }
     data.update(tailscale_info())
     return jsonify(data)
@@ -155,41 +185,37 @@ def api_uplink():
     if not is_open and len(password) < 8:
         return jsonify(ok=False, error="Senha de rede WPA precisa de >= 8 caracteres"), 400
 
-    # monta wpa_supplicant conf (mesmo formato do role)
-    def _net_block(prio, freqs=None):
-        lines = ['network={', '    ssid="%s"' % ssid, '    scan_ssid=1',
-                 '    priority=%d' % prio]
-        if is_open:
-            lines.append("    key_mgmt=NONE")
-        else:
-            lines.append('    psk="%s"' % password)
-            lines.append("    key_mgmt=WPA-PSK")
-        if freqs:
-            lines.append("    freq_list=" + freqs)
-        lines.append("}")
-        return lines
-
-    if UPLINK_PREFER_24GHZ:
-        # prefere 2.4GHz; fallback 5GHz so em canais nao-DFS (o AP segue)
-        net = _net_block(20, FREQ_LIST_24) + [""] + _net_block(10, FREQ_LIST_5_NONDFS)
-    else:
-        net = _net_block(10)
-    conf = "ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev\nupdate_config=1\ncountry=%s\n\n%s\n" % (
-        COUNTRY, "\n".join(net))
+    # Grava a escolha na fonte da verdade e REINICIA: o boot sobe a STA no canal
+    # certo e o AP acompanha (nunca reinicia o hostapd com o uplink ativo).
+    cur = read_uplink_conf()
+    cur["SSID"] = ssid
+    cur["PASSWORD"] = "" if is_open else password
+    cur["OPEN"] = "true" if is_open else "false"
+    cur.setdefault("BAND", "24")
     try:
-        with open(WPA_CONF, "w") as f:
-            f.write(conf)
-        os.chmod(WPA_CONF, 0o600)
+        write_uplink_conf(cur)
     except OSError as e:
-        return jsonify(ok=False, error="Falha ao gravar conf: %s" % e), 500
+        return jsonify(ok=False, error="Falha ao gravar uplink.conf: %s" % e), 500
+    reboot_in(2)
+    return jsonify(ok=True, ssid=ssid, open=is_open, reboot=True)
 
-    # recarrega o wpa_supplicant sem derrubar o serviço
-    run(["wpa_cli", "-i", UPLINK, "reconfigure"])
-    # re-dispara o channel-sync: se a nova rede estiver noutro canal, o AP
-    # re-sintoniza sozinho (o sync espera a associacao por ate 120s).
-    # --no-block: o sync e oneshot com loop de espera; nao segurar o request.
-    run(["systemctl", "restart", "--no-block", "hostapd-channel-sync.service"])
-    return jsonify(ok=True, ssid=ssid, open=is_open)
+
+@app.route("/api/band", methods=["POST"])
+def api_band():
+    body = request.get_json(force=True, silent=True) or {}
+    band = str(body.get("band") or "").strip()
+    if band not in ("24", "5", "auto"):
+        return jsonify(ok=False, error="banda invalida (use 24, 5 ou auto)"), 400
+    cur = read_uplink_conf()
+    if not cur.get("SSID"):
+        return jsonify(ok=False, error="Nenhum uplink configurado ainda"), 400
+    cur["BAND"] = band
+    try:
+        write_uplink_conf(cur)
+    except OSError as e:
+        return jsonify(ok=False, error="Falha ao gravar uplink.conf: %s" % e), 500
+    reboot_in(2)
+    return jsonify(ok=True, band=band, reboot=True)
 
 
 @app.route("/api/mode", methods=["POST"])

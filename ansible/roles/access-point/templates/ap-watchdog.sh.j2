@@ -24,9 +24,12 @@ if ! ip -4 addr show "$AP" 2>/dev/null | grep -q "${AP_IP}/"; then
 fi
 
 # 3) hostapd (o AP em si) está ativo?
+# START (nao restart): so agimos com o hostapd JA parado, entao nao ha AP ativo
+# para derrubar — evita o wedge da firmware (-52) que o restart de um hostapd
+# ativo provoca no radio unico.
 if ! systemctl is-active --quiet hostapd; then
-  logger -t ap-watchdog "hostapd inativo; reiniciando"
-  systemctl restart hostapd || true
+  logger -t ap-watchdog "hostapd inativo; iniciando (start, nao restart)"
+  systemctl start hostapd || true
   changed=1
 fi
 
