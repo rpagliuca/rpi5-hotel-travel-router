@@ -121,6 +121,25 @@ curl https://ifconfig.me   # deve mostrar o IP do exit node, não o do hotel
 
 ---
 
+## Web de configuração (sem SSH) 🌐
+
+Conectado no AP privado, abra **`http://192.168.88.1`** (`ap_ip`) no navegador do
+laptop ou celular. É um app single-page servido pelo próprio Pi (Flask, role
+`webapp`, só escuta na interface do AP) para operar o roteador **sem terminal**:
+
+- **Status** — uplink conectado, IP, internet, estado do Tailscale + exit node e
+  quantos dispositivos estão no seu AP (auto-refresh a cada 5 s).
+- **Escolher o Wi-Fi do hotel** — escaneia as redes ao redor, você seleciona o
+  SSID, marca se é aberta ou digita a senha, e aplica — sem editar `config.yml`.
+- **Alternar modo** `secure` ↔ `portal` num toque (ver seção de modos abaixo).
+- **Manutenção** — reiniciar o Pi ou disparar o rollback manual.
+
+O AP e essa página sobem **independentes** do hotel/Tailscale: mesmo se o uplink
+falhar, você continua com acesso à configuração. A porta é `webapp_port` (padrão
+`80`) em `main.yml`.
+
+---
+
 ## Configuration
 
 **Valores do seu ambiente** (SSIDs, senhas, authkey, exit node, IP do Pi): em

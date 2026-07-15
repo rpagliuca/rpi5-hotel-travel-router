@@ -1,0 +1,16 @@
+[Unit]
+Description=Travel Router — web de configuração (AP {{ ap_ip }})
+After=systemd-networkd.service hostapd.service
+Wants=hostapd.service
+# Nunca desistir (o AP pode demorar a subir o IP)
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/travel-router-web/travel_router_web.py
+Restart=always
+RestartSec=3
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+[Install]
+WantedBy=multi-user.target

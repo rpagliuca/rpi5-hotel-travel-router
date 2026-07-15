@@ -34,6 +34,8 @@
       tags: [routing]
     - role: tailscale
       tags: [tailscale]
+    - role: webapp
+      tags: [webapp]
     # Por ultimo: instala os CLIs de rollback e (se deadman_rollback=true) ARMA
     # o deadman switch — rede de seguranca para aplicar remotamente.
     - role: rollback-guard
