@@ -1,0 +1,198 @@
+#!/usr/bin/env python3
+"""
+Travel Router — web de configuração servida no AP privado ({{ ap_ip }}).
+Escuta SOMENTE na interface do AP (só quem está no seu Wi-Fi acessa).
+Roda como root (precisa mexer em wpa_supplicant / systemctl / tailscale).
+"""
+import os
+import re
+import subprocess
+from flask import Flask, request, jsonify, Response
+
+UPLINK  = "{{ uplink_interface }}"
+AP_IF   = "{{ ap_interface }}"
+AP_IP   = "{{ ap_ip }}"
+COUNTRY = "{{ wifi_country | default('BR') }}"
+WPA_CONF = "/etc/wpa_supplicant/wpa_supplicant-%s.conf" % UPLINK
+HTML_PATH = "/opt/travel-router-web/index.html"
+
+app = Flask(__name__)
+
+
+def run(cmd, timeout=20):
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return r.returncode, r.stdout.strip(), r.stderr.strip()
+    except Exception as e:
+        return 1, "", str(e)
+
+
+def freq_to_channel(freq):
+    try:
+        f = int(freq)
+    except (TypeError, ValueError):
+        return ""
+    if f == 2484:
+        return 14
+    if 2412 <= f <= 2472:
+        return (f - 2407) // 5
+    if 5000 <= f <= 5900:
+        return (f - 5000) // 5
+    return ""
+
+
+def wpa_status():
+    _, out, _ = run(["wpa_cli", "-i", UPLINK, "status"])
+    st = {}
+    for line in out.splitlines():
+        if "=" in line:
+            k, v = line.split("=", 1)
+            st[k] = v
+    return st
+
+
+def read_mode():
+    try:
+        with open("/run/travel-router.mode") as f:
+            return f.read().strip()
+    except OSError:
+        return "desconhecido"
+
+
+def tailscale_info():
+    import json
+    rc, out, _ = run(["tailscale", "status", "--json"])
+    info = {"tailscale_state": "?", "exit_node": ""}
+    if rc == 0 and out:
+        try:
+            d = json.loads(out)
+            info["tailscale_state"] = d.get("BackendState", "?")
+            # nome do exit node em uso
+            peers = d.get("Peer", {}) or {}
+            for p in peers.values():
+                if p.get("ExitNode"):
+                    info["exit_node"] = (p.get("HostName") or "").strip()
+                    break
+        except ValueError:
+            pass
+    return info
+
+
+@app.route("/")
+def index():
+    try:
+        with open(HTML_PATH) as f:
+            return Response(f.read(), mimetype="text/html")
+    except OSError:
+        return Response("<h1>index.html ausente</h1>", mimetype="text/html", status=500)
+
+
+@app.route("/api/status")
+def api_status():
+    st = wpa_status()
+    _, ipout, _ = run(["ip", "-4", "-o", "addr", "show", UPLINK])
+    m = re.search(r"inet (\S+)", ipout)
+    wlan_ip = m.group(1) if m else ""
+    rc_i, _, _ = run(["curl", "-s", "--max-time", "4", "-o", "/dev/null", "http://1.1.1.1"], timeout=6)
+    _, sta, _ = run(["iw", "dev", AP_IF, "station", "dump"])
+    clients = sta.count("Station")
+    data = {
+        "uplink_ssid": st.get("ssid", ""),
+        "uplink_channel": freq_to_channel(st.get("freq")),
+        "uplink_state": st.get("wpa_state", ""),
+        "wlan_ip": wlan_ip,
+        "internet": rc_i == 0,
+        "mode": read_mode(),
+        "ap_clients": clients,
+    }
+    data.update(tailscale_info())
+    return jsonify(data)
+
+
+@app.route("/api/scan")
+def api_scan():
+    run(["wpa_cli", "-i", UPLINK, "scan"])
+    # dá um tempo pro scan popular resultados
+    import time
+    time.sleep(3)
+    _, out, _ = run(["wpa_cli", "-i", UPLINK, "scan_results"])
+    nets = {}
+    for line in out.splitlines()[1:]:  # pula o cabeçalho
+        parts = line.split("\t")
+        if len(parts) < 5:
+            continue
+        bssid, freq, signal, flags, ssid = parts[0], parts[1], parts[2], parts[3], parts[4]
+        if not ssid:
+            continue
+        open_net = not ("WPA" in flags or "WEP" in flags)
+        try:
+            sig = int(signal)
+        except ValueError:
+            sig = -100
+        # dedup por SSID mantendo o de melhor sinal
+        cur = nets.get(ssid)
+        if cur is None or sig > cur["signal"]:
+            nets[ssid] = {"ssid": ssid, "signal": sig, "open": open_net,
+                          "channel": freq_to_channel(freq)}
+    result = sorted(nets.values(), key=lambda n: n["signal"], reverse=True)
+    return jsonify(networks=result)
+
+
+@app.route("/api/uplink", methods=["POST"])
+def api_uplink():
+    body = request.get_json(force=True, silent=True) or {}
+    ssid = (body.get("ssid") or "").strip()
+    is_open = bool(body.get("open"))
+    password = body.get("password") or ""
+    if not ssid:
+        return jsonify(ok=False, error="SSID vazio"), 400
+    if not is_open and len(password) < 8:
+        return jsonify(ok=False, error="Senha de rede WPA precisa de >= 8 caracteres"), 400
+
+    # monta wpa_supplicant conf (mesmo formato do role)
+    net = ['network={', '    ssid="%s"' % ssid, '    scan_ssid=1', '    priority=10']
+    if is_open:
+        net.append("    key_mgmt=NONE")
+    else:
+        net.append('    psk="%s"' % password)
+        net.append("    key_mgmt=WPA-PSK")
+    net.append("}")
+    conf = "ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev\nupdate_config=1\ncountry=%s\n\n%s\n" % (
+        COUNTRY, "\n".join(net))
+    try:
+        with open(WPA_CONF, "w") as f:
+            f.write(conf)
+        os.chmod(WPA_CONF, 0o600)
+    except OSError as e:
+        return jsonify(ok=False, error="Falha ao gravar conf: %s" % e), 500
+
+    # recarrega o wpa_supplicant sem derrubar o serviço
+    run(["wpa_cli", "-i", UPLINK, "reconfigure"])
+    return jsonify(ok=True, ssid=ssid, open=is_open)
+
+
+@app.route("/api/mode", methods=["POST"])
+def api_mode():
+    body = request.get_json(force=True, silent=True) or {}
+    mode = body.get("mode")
+    if mode not in ("portal", "secure"):
+        return jsonify(ok=False, error="modo inválido"), 400
+    rc, out, err = run(["/usr/local/bin/travel-router", mode], timeout=40)
+    return jsonify(ok=(rc == 0), output=out or err, mode=read_mode())
+
+
+@app.route("/api/reboot", methods=["POST"])
+def api_reboot():
+    # agenda reboot em 2s para a resposta HTTP conseguir voltar
+    subprocess.Popen(["/bin/sh", "-c", "sleep 2; systemctl reboot"])
+    return jsonify(ok=True)
+
+
+@app.route("/api/rollback", methods=["POST"])
+def api_rollback():
+    subprocess.Popen(["/bin/sh", "-c", "sleep 2; /usr/local/sbin/travel-router-rollback.sh"])
+    return jsonify(ok=True)
+
+
+if __name__ == "__main__":
+    app.run(host=AP_IP, port={{ webapp_port | default(80) }})

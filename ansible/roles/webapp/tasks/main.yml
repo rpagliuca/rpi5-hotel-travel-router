@@ -1,0 +1,45 @@
+---
+# Web app de configuração servido no AP privado (Flask, root, só na interface do AP).
+
+- name: Instalar Flask (via apt)
+  apt:
+    name: python3-flask
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Diretório do web app
+  file:
+    path: /opt/travel-router-web
+    state: directory
+    mode: "0755"
+
+- name: Deploy do backend Flask
+  template:
+    src: travel_router_web.py.j2
+    dest: /opt/travel-router-web/travel_router_web.py
+    mode: "0755"
+  notify: Restart travel-router-web
+
+- name: Deploy do frontend
+  template:
+    src: index.html.j2
+    dest: /opt/travel-router-web/index.html
+    mode: "0644"
+  notify: Restart travel-router-web
+
+- name: Deploy do serviço systemd
+  template:
+    src: travel-router-web.service.j2
+    dest: /etc/systemd/system/travel-router-web.service
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart travel-router-web
+
+- name: Habilitar e iniciar o web app
+  systemd:
+    name: travel-router-web
+    enabled: true
+    state: started
+    daemon_reload: true

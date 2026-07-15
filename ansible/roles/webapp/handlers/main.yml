@@ -1,0 +1,10 @@
+---
+- name: Reload systemd
+  systemd:
+    daemon_reload: true
+
+- name: Restart travel-router-web
+  systemd:
+    name: travel-router-web
+    state: restarted
+  failed_when: false

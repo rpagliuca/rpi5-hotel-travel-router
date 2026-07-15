@@ -38,5 +38,9 @@ travel_router_boot_mode: "secure"
 deadman_rollback: false
 deadman_timeout_sec: 300    # 5 min sem heartbeat -> rollback
 
+# ── Web app de configuração (servido no AP) ───────────────────────────────────
+webapp_port: 80             # http://192.168.88.1
+wifi_country: "BR"          # domínio regulatório usado nos configs de Wi-Fi
+
 # ── Sistema ─────────────────────────────────────────────────────────────────────
 timezone: "UTC"             # override em config.yml
