@@ -1,0 +1,29 @@
+{#
+  Perfil NM de FALLBACK do uplink — fica dormente enquanto a wlan0 esta
+  unmanaged (modo travel-router). No rollback, a wlan0 volta ao NetworkManager
+  e este perfil garante que o Pi SEMPRE tem como reconectar ao uplink.
+  Licao do incidente 2026-07-14: o rollback devolveu a wlan0 a um NM sem
+  nenhuma credencial (o perfil original era volatil, em /run) -> Pi orfao.
+#}
+[connection]
+id=uplink-fallback
+type=wifi
+interface-name={{ uplink_interface }}
+autoconnect=true
+autoconnect-priority=50
+
+[wifi]
+mode=infrastructure
+ssid={{ hotel_ssid }}
+
+{% if not (hotel_open | default(false) | bool) %}
+[wifi-security]
+key-mgmt=wpa-psk
+psk={{ hotel_password }}
+{% endif %}
+
+[ipv4]
+method=auto
+
+[ipv6]
+method=auto

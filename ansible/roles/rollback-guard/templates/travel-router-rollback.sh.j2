@@ -16,7 +16,7 @@ rm -f /var/lib/travel-router/deadman-armed
 # 2) Para e desabilita os servicos do travel-router
 for u in hostapd dnsmasq "wpa_supplicant@{{ uplink_interface }}" uap0-create \
          hostapd-channel-sync ap-watchdog.timer travel-router-boot tailscale-up \
-         systemd-networkd; do
+         travel-router-web systemd-networkd; do
   systemctl disable --now "$u" 2>/dev/null
 done
 
