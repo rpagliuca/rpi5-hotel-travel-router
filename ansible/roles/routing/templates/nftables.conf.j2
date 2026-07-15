@@ -32,6 +32,9 @@ table inet filter {
         iifname "{{ ap_interface }}" tcp dport 53 accept
         iifname "{{ ap_interface }}" udp dport 53 accept
 
+        # Web app de configuração (http://{{ ap_ip }})
+        iifname "{{ ap_interface }}" tcp dport {{ webapp_port }} accept
+
         # Allow ICMP
         ip protocol icmp accept
         ip6 nexthdr icmpv6 accept
