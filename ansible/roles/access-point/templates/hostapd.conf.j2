@@ -11,10 +11,9 @@ wpa=2
 wpa_passphrase={{ ap_password }}
 wpa_key_mgmt=WPA-PSK
 rsn_pairwise=CCMP
-country_code=BR
+country_code={{ wifi_country | default('BR') }}
 
-# NOTE: ap_channel must match the channel wlan0 uses for hotel uplink.
-# Both interfaces share the same physical radio. The channel is set here;
-# wpa_supplicant will connect to whatever channel the hotel AP uses, so keep
-# ap_channel aligned with your typical hotel WiFi channel (6 is common).
-# If the hotel uses 5GHz you can optionally set hw_mode=a and a 5GHz channel.
+# NOTE: canal e hw_mode sao GERIDOS pelo hostapd-channel-sync: radio unico,
+# AP e uplink compartilham canal, entao o sync re-sintoniza o AP (canal E
+# banda g/a) para casar com onde o uplink associou. Os valores acima sao so
+# o estado inicial/fallback quando nao ha uplink.

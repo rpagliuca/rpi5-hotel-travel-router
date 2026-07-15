@@ -12,14 +12,19 @@ CONF="/etc/hostapd/hostapd.conf"
 for i in $(seq 1 60); do
   ch="$(iw dev "$UPLINK" info 2>/dev/null | awk '/channel/{print $2; exit}')"
   if [ -n "${ch:-}" ]; then
+    # banda segue o canal: >14 = 5GHz (hw_mode=a), senao 2.4GHz (hw_mode=g).
+    # O uplink so associa em canais 5GHz nao-DFS (freq_list no wpa_supplicant),
+    # entao qualquer canal que chegar aqui e um em que o hostapd PODE operar.
+    if [ "$ch" -gt 14 ] 2>/dev/null; then hw="a"; else hw="g"; fi
     cur="$(awk -F= '/^channel=/{print $2; exit}' "$CONF")"
-    if [ "$ch" != "$cur" ]; then
-      sed -i "s/^channel=.*/channel=$ch/" "$CONF"
-      logger -t hostapd-channel-sync "uplink no canal $ch; re-sintonizando AP (era $cur)"
+    cur_hw="$(awk -F= '/^hw_mode=/{print $2; exit}' "$CONF")"
+    if [ "$ch" != "$cur" ] || [ "$hw" != "$cur_hw" ]; then
+      sed -i "s/^channel=.*/channel=$ch/; s/^hw_mode=.*/hw_mode=$hw/" "$CONF"
+      logger -t hostapd-channel-sync "uplink no canal $ch (hw_mode=$hw); re-sintonizando AP (era $cur/$cur_hw)"
       # reinício curto do AP no novo canal (o cliente reconecta sozinho)
       systemctl restart hostapd || true
     else
-      logger -t hostapd-channel-sync "uplink e AP ja no mesmo canal ($ch)"
+      logger -t hostapd-channel-sync "uplink e AP ja no mesmo canal ($ch, hw_mode=$hw)"
     fi
     exit 0
   fi

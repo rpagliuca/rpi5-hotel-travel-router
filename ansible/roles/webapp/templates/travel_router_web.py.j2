@@ -14,6 +14,12 @@ AP_IF   = "{{ ap_interface }}"
 AP_IP   = "{{ ap_ip }}"
 COUNTRY = "{{ wifi_country | default('BR') }}"
 WPA_CONF = "/etc/wpa_supplicant/wpa_supplicant-%s.conf" % UPLINK
+# AP-sempre-de-pé com PREFERÊNCIA por 2.4GHz (nao restricao): dois blocos de
+# rede, prioridade alta em 2.4 (canais 1-13) e fallback em 5GHz apenas nos
+# canais nao-DFS (o AP consegue seguir). Ver uplink_prefer_24ghz no main.yml.
+UPLINK_PREFER_24GHZ = {{ 'True' if (uplink_prefer_24ghz | default(true) | bool) else 'False' }}
+FREQ_LIST_24 = "2412 2417 2422 2427 2432 2437 2442 2447 2452 2457 2462 2467 2472"
+FREQ_LIST_5_NONDFS = "5180 5200 5220 5240 5745 5765 5785 5805 5825"
 HTML_PATH = "/opt/travel-router-web/index.html"
 
 app = Flask(__name__)
@@ -150,13 +156,24 @@ def api_uplink():
         return jsonify(ok=False, error="Senha de rede WPA precisa de >= 8 caracteres"), 400
 
     # monta wpa_supplicant conf (mesmo formato do role)
-    net = ['network={', '    ssid="%s"' % ssid, '    scan_ssid=1', '    priority=10']
-    if is_open:
-        net.append("    key_mgmt=NONE")
+    def _net_block(prio, freqs=None):
+        lines = ['network={', '    ssid="%s"' % ssid, '    scan_ssid=1',
+                 '    priority=%d' % prio]
+        if is_open:
+            lines.append("    key_mgmt=NONE")
+        else:
+            lines.append('    psk="%s"' % password)
+            lines.append("    key_mgmt=WPA-PSK")
+        if freqs:
+            lines.append("    freq_list=" + freqs)
+        lines.append("}")
+        return lines
+
+    if UPLINK_PREFER_24GHZ:
+        # prefere 2.4GHz; fallback 5GHz so em canais nao-DFS (o AP segue)
+        net = _net_block(20, FREQ_LIST_24) + [""] + _net_block(10, FREQ_LIST_5_NONDFS)
     else:
-        net.append('    psk="%s"' % password)
-        net.append("    key_mgmt=WPA-PSK")
-    net.append("}")
+        net = _net_block(10)
     conf = "ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev\nupdate_config=1\ncountry=%s\n\n%s\n" % (
         COUNTRY, "\n".join(net))
     try:
@@ -168,6 +185,10 @@ def api_uplink():
 
     # recarrega o wpa_supplicant sem derrubar o serviço
     run(["wpa_cli", "-i", UPLINK, "reconfigure"])
+    # re-dispara o channel-sync: se a nova rede estiver noutro canal, o AP
+    # re-sintoniza sozinho (o sync espera a associacao por ate 120s).
+    # --no-block: o sync e oneshot com loop de espera; nao segurar o request.
+    run(["systemctl", "restart", "--no-block", "hostapd-channel-sync.service"])
     return jsonify(ok=True, ssid=ssid, open=is_open)
 
 
